@@ -1,0 +1,10 @@
+# ninja log v5
+1	16354	1666213356998330965	/workspace/P4Transformer/modules/build/temp.linux-x86_64-3.8/_ext_src/src/group_points.o	b85dc15749b36ae5
+1	16405	1666213357050330262	/workspace/P4Transformer/modules/build/temp.linux-x86_64-3.8/_ext_src/src/ball_query.o	5eb4dde36161347c
+0	16482	1666213357130329181	/workspace/P4Transformer/modules/build/temp.linux-x86_64-3.8/_ext_src/src/interpolate.o	bd0fcf0a14f065d7
+0	16549	1666213357194328317	/workspace/P4Transformer/modules/build/temp.linux-x86_64-3.8/_ext_src/src/sampling.o	41e3691a84e9e887
+1	19432	1666213360078289351	/workspace/P4Transformer/modules/build/temp.linux-x86_64-3.8/_ext_src/src/bindings.o	59b2ed6f37c55f73
+0	31825	1666213372458122094	/workspace/P4Transformer/modules/build/temp.linux-x86_64-3.8/_ext_src/src/ball_query_gpu.o	9b5a38db05523c92
+2	32168	1666213372802117446	/workspace/P4Transformer/modules/build/temp.linux-x86_64-3.8/_ext_src/src/group_points_gpu.o	3a7ae8ba8ce9f44c
+2	32350	1666213372982115014	/workspace/P4Transformer/modules/build/temp.linux-x86_64-3.8/_ext_src/src/interpolate_gpu.o	eafc1eb61dea69f9
+2	33954	1666213374582093399	/workspace/P4Transformer/modules/build/temp.linux-x86_64-3.8/_ext_src/src/sampling_gpu.o	1b5af7e58268ecea
