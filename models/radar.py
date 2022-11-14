@@ -78,4 +78,4 @@ class RadarP4Transformer (nn.Module):
         output = torch.max(output, dim=1, keepdim=False, out=None)[0]
         output = self.mlp_head(output)
 
-        return output
+        return output, xyzts, features

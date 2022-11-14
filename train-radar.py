@@ -15,26 +15,44 @@ from torchvision import transforms
 import utils
 
 from scheduler import WarmupMultiStepLR
+import models.loss as losses
 
 from datasets.radar import Radar
 import models.radar as Models
 
-def train_one_epoch(model, criterion, optimizer, lr_scheduler, data_loader, device, epoch, print_freq):
+MAX_POSITIVE_KEYPOINT_MPJPE = None
+
+view_loss_weight = 0.3
+
+
+def train_one_epoch(model, criterion, optimizer, contrastive_optimizer, lr_scheduler, data_loader, positive_data_loader, device, epoch, print_freq):
     model.train()
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value}'))
     metric_logger.add_meter('clips/s', utils.SmoothedValue(window_size=10, fmt='{value:.3f}'))
 
     header = 'Epoch: [{}]'.format(epoch)
-    for clip, features, target, _ in metric_logger.log_every(data_loader, print_freq, header):
+    for clip, features, target, _, positive_clip, positive_features, _, _ in zip(
+        metric_logger.log_every(data_loader, print_freq, header),
+        metric_logger.log_every(positive_data_loader, print_freq, header)):
         start_time = time.time()
         clip, features, target = clip.to(device), features.to(device), target.to(device)
-        output = model(clip, features)
+        positive_clip, positive_features = positive_clip.to(device), positive_feature.to(device)
+        output, xyzts, features = model(clip, features)
+        _, positive_xyzts, features = model(positive_clip, positive_feature)
         loss = criterion(output, target)
+        anchor_representation_loss = losses.compute_representation_loss(clip, (xyzts, features), losses.TYPE_FUSION_OP_MOE, None)
+        view_loss = view_loss_weight * losses.compute_fenchel_dual_loss(xyzts, positive_xyzts, losses.TYPE_MEASURE_JSD)
+
+        contrastive_loss = anchor_representation_loss + view_loss
+        loss = loss + contrastive_loss
 
         optimizer.zero_grad()
+        contrastive_optimizer.zero_grad()
+
         loss.backward()
         optimizer.step()
+        contrastive_optimizer.step()
 
         acc1, acc5 = utils.accuracy(output, target, topk=(1, 5))
         batch_size = clip.shape[0]
@@ -117,6 +135,7 @@ def main(args):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
+
     device = torch.device('cuda')
 
     # Data loading code
@@ -146,6 +165,9 @@ def main(args):
 
     data_loader_test = torch.utils.data.DataLoader(dataset_test, batch_size=args.batch_size, num_workers=args.workers, pin_memory=True)
 
+    anchor_indicator_matrix = None
+    positive_indicator_matrix = None
+
     print("Creating model")
     Model = getattr(Models, args.model)
     model = Model(radius=args.radius, nsamples=args.nsamples, spatial_stride=args.spatial_stride,
@@ -162,6 +184,7 @@ def main(args):
 
     lr = args.lr
     optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=args.momentum, weight_decay=args.weight_decay)
+    contrastive_optimizer = torch.optim.adagrad(model.parameters(), lr=lr, weight_decay=args.weight_decay)
 
     # convert scheduler to be per iteration, not per epoch, for warmup that lasts
     # between different epochs
