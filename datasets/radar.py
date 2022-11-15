@@ -15,14 +15,16 @@ class Radar(Dataset):
         index = 0
         point_clouds = {}
         label_key = {
-            "pf": 0,
-            "aud": 1,
-            "lud": 2,
-            "sq": 3,
-            "ln": 4,
-            "hs": 5,
-            "hr": 6,
-            "jj": 7
+            "idle": 0,
+            "pf": 1,
+            "aud": 2,
+            "lud": 3,
+            "sq": 4,
+            "ln": 5,
+            "pu": 6,
+            "jj": 7,
+            "tr": 8,
+            "su": 9
         }
 
         for file_name in os.listdir(root):
