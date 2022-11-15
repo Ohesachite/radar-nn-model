@@ -71,20 +71,44 @@ class Radar(Dataset):
 
         clip = np.array(clip)
 
-        if self.train:
-            # scale the points
-            scales = np.random.uniform(0.9, 1.1, size=5)
-            clip = clip * scales
-
         clip_points = clip[:,:,:3]
         clip_features = clip[:,:,3:]
         clip_features = np.swapaxes(clip_features, 1, 2)
 
-        return clip_points.astype(np.float32), clip_features.astype(np.float32), label, index
+        positive_clip_points, positive_clip_features = self.generate_positive_sample(clip_points, clip_features)
+
+        return clip_points.astype(np.float32), clip_features.astype(np.float32), label, index, positive_clip_points, positive_clip_features
+
+    def generate_positive_sample(self, clip_points, clip_features):
+        if not self.train:
+            return clip_points, clip_features
+
+        random_sign = np.random.randint(2) * 2 - 1
+        random_angular_offset = np.random.randint(180) + 1
+        generated_angle_deg = random_sign * random_angular_offset
+        generated_angle_rad = generated_angle_deg * np.pi / 180
+
+        aggregated_clip_points = np.reshape(clip_points, (self.frames_per_clip * self.num_points, 3))
+        median_point = np.median(aggregated_clip_points, axis=0)
+
+        new_clip_points = []
+
+        for i, p in enumerate(clip_points):
+            p = p - median_point
+            p = np.matmul(p, np.array([[np.cos(generated_angle_rad), np.sin(generated_angle_rad), 0], 
+                                        [- np.sin(generated_angle_rad), np.cos(generated_angle_rad), 0], 
+                                        [0, 0, 1]]))
+            p = p + median_point
+            new_clip_points.append(p)
+
+        new_clip_points = np.array(new_clip_points)
+
+        return new_clip_points, clip_features
                         
 if __name__ == '__main__':
     dataset = Radar(root='../data/radar/test', train=True)
-    for i in range(len(dataset)):
-        clip_points, clip_features, label, video_idx = dataset[i]
-        print(clip_points.shape, clip_features.shape, label, video_idx)
+    clip_points, clip_features, label, video_idx, positive_points, positive_features = dataset[0]
+    print(clip_points)
+    print(positive_points)
+    print(len(dataset))
     print(dataset.labels)

@@ -32,7 +32,7 @@ def train_one_epoch(model, criterion, optimizer, contrastive_optimizer, lr_sched
     metric_logger.add_meter('clips/s', utils.SmoothedValue(window_size=10, fmt='{value:.3f}'))
 
     header = 'Epoch: [{}]'.format(epoch)
-    for clip, features, target, _, positive_clip, positive_features, _, _ in zip(
+    for clip, features, target, _, positive_clip, positive_features in zip(
         metric_logger.log_every(data_loader, print_freq, header),
         metric_logger.log_every(positive_data_loader, print_freq, header)):
         start_time = time.time()
@@ -70,7 +70,7 @@ def evaluate(model, criterion, data_loader, device):
     video_prob = {}
     video_label = {}
     with torch.no_grad():
-        for clip, features, target, video_idx in metric_logger.log_every(data_loader, 100, header):
+        for clip, features, target, video_idx, _, _ in metric_logger.log_every(data_loader, 100, header):
             clip = clip.to(device, non_blocking=True)
             target = target.to(device, non_blocking=True)
             output = model(clip, features)

@@ -42,6 +42,8 @@ class RadarP4Transformer (nn.Module):
 
         self.transformer = Transformer(dim, depth, heads, dim_head, mlp_dim)
 
+        self.constrastive_mlp = nn.Linear(4, dim)
+
         self.mlp_head = nn.Sequential(
             nn.LayerNorm(dim),
             nn.Linear(dim, mlp_dim),
@@ -69,6 +71,8 @@ class RadarP4Transformer (nn.Module):
 
         xyzts = self.pos_embedding(xyzts.permute(0, 2, 1)).permute(0, 2, 1)
 
+        contrastive_xyzts = self.constrastive_mlp(xyzts)
+
         embedding = xyzts + features
 
         if self.emb_relu:
@@ -78,4 +82,4 @@ class RadarP4Transformer (nn.Module):
         output = torch.max(output, dim=1, keepdim=False, out=None)[0]
         output = self.mlp_head(output)
 
-        return output, xyzts, features
+        return output, contrastive_xyzts, features
