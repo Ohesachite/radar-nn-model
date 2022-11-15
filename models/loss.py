@@ -72,15 +72,16 @@ def compute_negative_expectation(samples, measure, reduce_mean=False):
 
 
 def compute_fenchel_dual_loss(local_features, global_features, measure, positive_indicator_matrix=None):
-    batech_size, num_locals, feature_dim = local_features.shape
-    num_globals = global_features.shape[-2]
+	batch_size, num_locals, local_feature_dim = local_features.shape
+	_, num_globals, global_feature_dim = global_features.shape
 
-    local_features = torch.reshape(local_features, (-1, feature_dim))
-    global_features = torch.reshape(global_features, (-1, feature_dim))
+	local_features = torch.reshape(local_features, (local_feature_dim, -1))
+	global_features = torch.reshape(global_features, (-1, global_feature_dim))
 
-    # FIXME: check whether it transpose automatically
-    product = torch.matmul(local_features, global_features)
-    product = torch.reshape(product, (batch_size, num_locals, batech_size, num_globals))
+	# FIXME: check whether it transpose automatically
+	assert(num_globals == num_locals)
+	product = torch.matmul(local_features, global_features)
+	product = torch.reshape(product, (batch_size, num_locals, batech_size, num_globals))
 
     if positive_indicator_matrix is None:
         positive_indicator_matrix = torch.eye(batch_size, dtype=torch.float32)
@@ -89,8 +90,8 @@ def compute_fenchel_dual_loss(local_features, global_features, measure, positive
     positive_expectation = compute_positive_expectation(product, measure, reduce_mean=False)
     negative_expectation = compute_negative_expectation(product, measure, reduce_mean=False)
 
-    positive_expectation = torch.mean(positive_expectation, dim=(1, 3))
-    negative_expectation = torch.mean(negative_expectation, dim=(1,3))
+	positive_expectation = torch.mean(positive_expectation, dim=(1,3))
+	negative_expectation = torch.mean(negative_expectation, dim=(1,3))
 
     positive_expectation = torch.sum(positive_expectation * positive_indicator_matrix) / torch.max(
         torch.sum(positive_indicator_matrix), 1e-12)
@@ -100,19 +101,15 @@ def compute_fenchel_dual_loss(local_features, global_features, measure, positive
     return negative_expectation - positive_expectation
 
 def compute_representation_loss(inputs, targets, fusion_type, positive_indicator_matrix):
-    point_cloud_ts = targets[0]
-    feature_ts = targets[1]
+	point_cloud_ts = targets[0]
+	feature_ts = targets[1]
 
-    if fusion_type == TYPE_FUSION_OP_CAT:
-        #FIXME need to check which dim to concat
-        fusion_embeddings = torch.cat((point_cloud_ts, feature_ts), dim=1)
-    elif fusion_type == TYPE_FUSION_OP_POE:
-        fusion_embeddings = point_cloud_ts * feature_ts
-    elif fusion_type == TYPE_FUSION_OP_MOE:
-        fusion_embeddings = 0.5 * (point_cloud_ts + feature_ts)
-    else:
-        raise ValueError("Unknown fusion operation: {}".format(fusion_type))
-    
-    representation_loss = compute_fenchel_dual_loss(inputs, fusion_embeddings, TYPE_MEASURE_JSD, positive_indicator_matrix)
+	if fusion_type == TYPE_FUSION_OP_CAT:
+		#FIXME need to check which dim to concat
+		fusion_embeddings = torch.cat((point_cloud_ts, feature_ts), dim=1)
+	else:
+		raise ValueError("Unknown fusion operation: {}".format(fusion_type))
+	
+	representation_loss = compute_fenchel_dual_loss(inputs, fusion_embeddings, TYPE_MEASURE_JSD, positive_indicator_matrix)
 
-    return representation_loss
+	return representation_loss
