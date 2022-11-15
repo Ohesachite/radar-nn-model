@@ -107,6 +107,10 @@ def compute_representation_loss(inputs, targets, fusion_type, positive_indicator
 	if fusion_type == TYPE_FUSION_OP_CAT:
 		#FIXME need to check which dim to concat
 		fusion_embeddings = torch.cat((point_cloud_ts, feature_ts), dim=1)
+    elif fusion_type == TYPE_FUSION_OP_POE:
+        fusion_embeddings = point_cloud_ts * feature_ts
+    elif fusion_type == TYPE_FUSION_OP_MOE:
+        fusion_embeddings = 0.5 * (point_cloud_ts + feature_ts)
 	else:
 		raise ValueError("Unknown fusion operation: {}".format(fusion_type))
 	
