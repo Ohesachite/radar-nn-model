@@ -42,8 +42,6 @@ class RadarP4Transformer (nn.Module):
 
         self.transformer = Transformer(dim, depth, heads, dim_head, mlp_dim)
 
-        self.constrastive_mlp = nn.Linear(4, dim)
-
         self.mlp_head = nn.Sequential(
             nn.LayerNorm(dim),
             nn.Linear(dim, mlp_dim),
@@ -53,8 +51,13 @@ class RadarP4Transformer (nn.Module):
 
     def forward(self, xyzs, old_features):                                                                                              # [B, L, N, 3], [B, L, 1, n]
         device = xyzs.get_device()
+
+        print(xyzs.shape, old_features.shape)
+
         # xyzs_s1, features_s1 = self.conv1(xyzs, old_features)
         new_xyzs, features = self.conv2(xyzs, old_features)                                                                             # [B, L, n, 3], [B, L, C, n] 
+
+        print(new_xyzs.shape, features.shape)
 
         xyzts = []
         new_xyzs = torch.split(tensor=new_xyzs, split_size_or_sections=1, dim=1)
@@ -69,9 +72,11 @@ class RadarP4Transformer (nn.Module):
         features = features.permute(0, 1, 3, 2)                                                                                         # [B, L,   n, C]
         features = torch.reshape(features, (features.shape[0], features.shape[1]*features.shape[2], features.shape[3]))                 # [B, L*n, C] 
 
+        print(xyzts.shape, features.shape)
+
         xyzts = self.pos_embedding(xyzts.permute(0, 2, 1)).permute(0, 2, 1)
 
-        contrastive_xyzts = self.constrastive_mlp(xyzts)
+        print(xyzts.shape, features.shape)
 
         embedding = xyzts + features
 
@@ -82,4 +87,4 @@ class RadarP4Transformer (nn.Module):
         output = torch.max(output, dim=1, keepdim=False, out=None)[0]
         output = self.mlp_head(output)
 
-        return output, contrastive_xyzts, features
+        return output, xyzts, features

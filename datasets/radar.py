@@ -77,7 +77,7 @@ class Radar(Dataset):
 
         positive_clip_points, positive_clip_features = self.generate_positive_sample(clip_points, clip_features)
 
-        return clip_points.astype(np.float32), clip_features.astype(np.float32), label, index, positive_clip_points, positive_clip_features
+        return clip_points.astype(np.float32), clip_features.astype(np.float32), label, index, positive_clip_points.astype(np.float32), positive_clip_features.astype(np.float32)
 
     def generate_positive_sample(self, clip_points, clip_features):
         if not self.train:

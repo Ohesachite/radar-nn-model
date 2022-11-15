@@ -23,38 +23,36 @@ import models.radar as Models
 MAX_POSITIVE_KEYPOINT_MPJPE = None
 
 view_loss_weight = 0.3
-anchor_representation_loss = 0.7
+anchor_representation_loss_weight = 0.7
 cross_entropy_loss_weight = 1
 
 
-def train_one_epoch(model, criterion, optimizer, contrastive_optimizer, lr_scheduler, data_loader, positive_data_loader, device, epoch, print_freq):
+def train_one_epoch(model, criterion, optimizer, lr_scheduler, data_loader, device, epoch, print_freq):
     model.train()
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value}'))
     metric_logger.add_meter('clips/s', utils.SmoothedValue(window_size=10, fmt='{value:.3f}'))
 
     header = 'Epoch: [{}]'.format(epoch)
-    for clip, features, target, _, positive_clip, positive_features in zip(
-        metric_logger.log_every(data_loader, print_freq, header),
-        metric_logger.log_every(positive_data_loader, print_freq, header)):
+    for clip, features, target, _, positive_clip, positive_features in metric_logger.log_every(data_loader, print_freq, header):
         start_time = time.time()
         clip, features, target = clip.to(device), features.to(device), target.to(device)
-        positive_clip, positive_features = positive_clip.to(device), positive_feature.to(device)
+        positive_clip, positive_features = positive_clip.to(device), positive_features.to(device)
         output, xyzts, features = model(clip, features)
-        _, positive_xyzts, postive_features = model(positive_clip, positive_feature)
+        _, positive_xyzts, postive_features = model(positive_clip, positive_features)
         loss = criterion(output, target)
-        anchor_representation_loss = anchor_representation_loss * losses.compute_representation_loss(clip, (xyzts, features), losses.TYPE_FUSION_OP_CAT, None)
+        anchor_representation_loss = anchor_representation_loss_weight * losses.compute_representation_loss(clip, (xyzts, features), losses.TYPE_FUSION_OP_CAT, None)
         view_loss = view_loss_weight * losses.compute_fenchel_dual_loss(features, positive_features, losses.TYPE_MEASURE_JSD)
 
         contrastive_loss = anchor_representation_loss + view_loss
         loss = loss + contrastive_loss
 
         optimizer.zero_grad()
-        contrastive_optimizer.zero_grad()
+        # contrastive_optimizer.zero_grad()
 
         loss.backward()
         optimizer.step()
-        contrastive_optimizer.step()
+        # contrastive_optimizer.step()
 
         acc1, acc5 = utils.accuracy(output, target, topk=(1, 5))
         batch_size = clip.shape[0]
@@ -186,7 +184,7 @@ def main(args):
 
     lr = args.lr
     optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=args.momentum, weight_decay=args.weight_decay)
-    contrastive_optimizer = torch.optim.adagrad(model.conv2.parameters(), lr=lr, weight_decay=args.weight_decay)
+    # contrastive_optimizer = torch.optim.Adagrad([model.conv2.parameters(), model.contrastive_mlp.parameters()], lr=lr, weight_decay=args.weight_decay)
 
     # convert scheduler to be per iteration, not per epoch, for warmup that lasts
     # between different epochs
