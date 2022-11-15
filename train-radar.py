@@ -23,6 +23,8 @@ import models.radar as Models
 MAX_POSITIVE_KEYPOINT_MPJPE = None
 
 view_loss_weight = 0.3
+anchor_representation_loss = 0.7
+cross_entropy_loss_weight = 1
 
 
 def train_one_epoch(model, criterion, optimizer, contrastive_optimizer, lr_scheduler, data_loader, positive_data_loader, device, epoch, print_freq):
@@ -39,10 +41,10 @@ def train_one_epoch(model, criterion, optimizer, contrastive_optimizer, lr_sched
         clip, features, target = clip.to(device), features.to(device), target.to(device)
         positive_clip, positive_features = positive_clip.to(device), positive_feature.to(device)
         output, xyzts, features = model(clip, features)
-        _, positive_xyzts, features = model(positive_clip, positive_feature)
+        _, positive_xyzts, postive_features = model(positive_clip, positive_feature)
         loss = criterion(output, target)
-        anchor_representation_loss = losses.compute_representation_loss(clip, (xyzts, features), losses.TYPE_FUSION_OP_MOE, None)
-        view_loss = view_loss_weight * losses.compute_fenchel_dual_loss(xyzts, positive_xyzts, losses.TYPE_MEASURE_JSD)
+        anchor_representation_loss = anchor_representation_loss * losses.compute_representation_loss(clip, (xyzts, features), losses.TYPE_FUSION_OP_CAT, None)
+        view_loss = view_loss_weight * losses.compute_fenchel_dual_loss(features, positive_features, losses.TYPE_MEASURE_JSD)
 
         contrastive_loss = anchor_representation_loss + view_loss
         loss = loss + contrastive_loss
