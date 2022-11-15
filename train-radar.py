@@ -186,7 +186,7 @@ def main(args):
 
     lr = args.lr
     optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=args.momentum, weight_decay=args.weight_decay)
-    contrastive_optimizer = torch.optim.adagrad(model.parameters(), lr=lr, weight_decay=args.weight_decay)
+    contrastive_optimizer = torch.optim.adagrad(model.conv2.parameters(), lr=lr, weight_decay=args.weight_decay)
 
     # convert scheduler to be per iteration, not per epoch, for warmup that lasts
     # between different epochs
