@@ -101,12 +101,12 @@ def process_radar_data(root, fps=16, train=True, eps=0.05, min_samples=3, radars
             np.save(new_file, new_point_clouds[key])
 
 if __name__ == "__main__":
-    process_radar_data(root='/workspace/P4Transformer/data/radar/set6', eps=0.04, min_samples=3, radars=[0,1,2])                            # 1-3
-    process_radar_data(root='/workspace/P4Transformer/data/radar/set7', eps=0.04, min_samples=3, radars=[0,1,2])                            # 4-6
-    process_radar_data(root='/workspace/P4Transformer/data/radar/set6', eps=0.06, min_samples=5, train=False, radars=[0])                   # 1-3
-    process_radar_data(root='/workspace/P4Transformer/data/radar/set6', eps=0.06, min_samples=5, train=False, radars=[1], label_offset=6)   # 7-9
-    process_radar_data(root='/workspace/P4Transformer/data/radar/set6', eps=0.06, min_samples=5, train=False, radars=[2], label_offset=9)   # 10-12
-    process_radar_data(root='/workspace/P4Transformer/data/radar/set7', eps=0.06, min_samples=5, train=False, radars=[0])                   # 4-6
-    process_radar_data(root='/workspace/P4Transformer/data/radar/set7', eps=0.06, min_samples=5, train=False, radars=[1], label_offset=9)   # 13-15
-    process_radar_data(root='/workspace/P4Transformer/data/radar/set7', eps=0.06, min_samples=5, train=False, radars=[2], label_offset=12)  # 16-18
+    process_radar_data(root='/workspace/radar-nn-model/data/radar/set6', eps=0.04, min_samples=3, radars=[0,1,2])                           # 1-3
+    process_radar_data(root='/workspace/radar-nn-model/data/radar/set7', eps=0.04, min_samples=3, radars=[0,1,2])                           # 4-6
+    process_radar_data(root='/workspace/radar-nn-model/data/radar/set6', eps=0.06, min_samples=5, train=False, radars=[0])                  # 1-3
+    process_radar_data(root='/workspace/radar-nn-model/data/radar/set6', eps=0.06, min_samples=5, train=False, radars=[1], label_offset=6)  # 7-9
+    process_radar_data(root='/workspace/radar-nn-model/data/radar/set6', eps=0.06, min_samples=5, train=False, radars=[2], label_offset=9)  # 10-12
+    process_radar_data(root='/workspace/radar-nn-model/data/radar/set7', eps=0.06, min_samples=5, train=False, radars=[0])                  # 4-6
+    process_radar_data(root='/workspace/radar-nn-model/data/radar/set7', eps=0.06, min_samples=5, train=False, radars=[1], label_offset=9)  # 13-15
+    process_radar_data(root='/workspace/radar-nn-model/data/radar/set7', eps=0.06, min_samples=5, train=False, radars=[2], label_offset=12) # 16-18
     

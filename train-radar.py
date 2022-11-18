@@ -22,12 +22,7 @@ import models.radar as Models
 
 MAX_POSITIVE_KEYPOINT_MPJPE = None
 
-view_loss_weight = 0.3
-anchor_representation_loss_weight = 0.7
-cross_entropy_loss_weight = 1
-
-
-def train_one_epoch(model, criterion, optimizer, lr_scheduler, data_loader, device, epoch, print_freq):
+def train_one_epoch(model, criterion, optimizer, contrastive_optimizer, lr_scheduler, data_loader, device, epoch, print_freq, contrastive_alpha=0.3, contrastive_weight=0.1):
     model.train()
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value}'))
@@ -39,20 +34,22 @@ def train_one_epoch(model, criterion, optimizer, lr_scheduler, data_loader, devi
         clip, features, target = clip.to(device), features.to(device), target.to(device)
         positive_clip, positive_features = positive_clip.to(device), positive_features.to(device)
         output, xyzts, features = model(clip, features)
-        _, positive_xyzts, postive_features = model(positive_clip, positive_features)
+        _, positive_xyzts, positive_features = model(positive_clip, positive_features)
         loss = criterion(output, target)
-        anchor_representation_loss = anchor_representation_loss_weight * losses.compute_representation_loss(clip, (xyzts, features), losses.TYPE_FUSION_OP_CAT, None)
-        view_loss = view_loss_weight * losses.compute_fenchel_dual_loss(features, positive_features, losses.TYPE_MEASURE_JSD)
+        anchor_representation_loss = (1.0 - contrastive_alpha) * losses.compute_representation_loss(features, (xyzts, features), losses.TYPE_FUSION_OP_POE, None)
+        view_loss = contrastive_alpha * losses.compute_fenchel_dual_loss(features, positive_features, losses.TYPE_MEASURE_JSD)
 
-        contrastive_loss = anchor_representation_loss + view_loss
-        loss = loss + contrastive_loss
+        contrastive_loss = contrastive_weight * (anchor_representation_loss + view_loss)
+        # loss = loss + contrastive_loss
 
         optimizer.zero_grad()
-        # contrastive_optimizer.zero_grad()
+        contrastive_optimizer.zero_grad()
 
-        loss.backward()
+        loss.backward(retain_graph=True)
+        contrastive_loss.backward(retain_graph=True)
+
         optimizer.step()
-        # contrastive_optimizer.step()
+        contrastive_optimizer.step()
 
         acc1, acc5 = utils.accuracy(output, target, topk=(1, 5))
         batch_size = clip.shape[0]
@@ -73,7 +70,7 @@ def evaluate(model, criterion, data_loader, device):
         for clip, features, target, video_idx, _, _ in metric_logger.log_every(data_loader, 100, header):
             clip = clip.to(device, non_blocking=True)
             target = target.to(device, non_blocking=True)
-            output = model(clip, features)
+            output, _, _ = model(clip, features)
             loss = criterion(output, target)
 
             acc1, acc5 = utils.accuracy(output, target, topk=(1, 5))
@@ -184,7 +181,10 @@ def main(args):
 
     lr = args.lr
     optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=args.momentum, weight_decay=args.weight_decay)
-    # contrastive_optimizer = torch.optim.Adagrad([model.conv2.parameters(), model.contrastive_mlp.parameters()], lr=lr, weight_decay=args.weight_decay)
+    contrastive_optimizer = torch.optim.Adagrad([
+        {'params': model.module.tube_embedding.parameters()}, 
+        {'params': model.module.pos_embedding.parameters()}
+        ], lr=lr, weight_decay=args.weight_decay)
 
     # convert scheduler to be per iteration, not per epoch, for warmup that lasts
     # between different epochs
@@ -206,7 +206,7 @@ def main(args):
     start_time = time.time()
     acc = 0
     for epoch in range(args.start_epoch, args.epochs):
-        train_one_epoch(model, criterion, optimizer, lr_scheduler, data_loader, device, epoch, args.print_freq)
+        train_one_epoch(model, criterion, optimizer, contrastive_optimizer, lr_scheduler, data_loader, device, epoch, args.print_freq, contrastive_alpha=args.contrastive_alpha, contrastive_weight=args.contrastive_weight)
 
         acc = max(acc, evaluate(model, criterion, data_loader_test, device=device))
 
@@ -234,17 +234,17 @@ def parse_args():
     import argparse
     parser = argparse.ArgumentParser(description='P4Transformer Model Training')
 
-    parser.add_argument('--train-path', default='/workspace/P4Transformer/data/radar/train', type=str, help='training dataset')
-    parser.add_argument('--test-path', default='/workspace/P4Transformer/data/radar/test', type=str, help='testing dataset')
+    parser.add_argument('--train-path', default='/workspace/radar-nn-model/data/radar/train', type=str, help='training dataset')
+    parser.add_argument('--test-path', default='/workspace/radar-nn-model/data/radar/test', type=str, help='testing dataset')
     parser.add_argument('--seed', default=0, type=int, help='random seed')
     parser.add_argument('--model', default='RadarP4Transformer', type=str, help='model')
     # input
-    parser.add_argument('--clip-len', default=32, type=int, metavar='N', help='number of frames per clip')
+    parser.add_argument('--clip-len', default=16, type=int, metavar='N', help='number of frames per clip')
     parser.add_argument('--frame-interval', default=1, type=int, metavar='N', help='interval of sampled frames')
     parser.add_argument('--num-points', default=1024, type=int, metavar='N', help='number of points per frame')
     # P4D
-    parser.add_argument('--radius', default=0.08, type=float, help='radius for the ball query')
-    parser.add_argument('--nsamples', default=5, type=int, help='number of neighbors for the ball query')
+    parser.add_argument('--radius', default=0.5, type=float, help='radius for the ball query')
+    parser.add_argument('--nsamples', default=32, type=int, help='number of neighbors for the ball query')
     parser.add_argument('--spatial-stride', default=32, type=int, help='spatial subsampling rate')
     parser.add_argument('--temporal-kernel-size', default=3, type=int, help='temporal kernel size')
     parser.add_argument('--temporal-stride', default=2, type=int, help='temporal stride')
@@ -266,6 +266,8 @@ def parse_args():
     parser.add_argument('--lr-milestones', nargs='+', default=[10, 20, 30], type=int, help='decrease lr on milestones')
     parser.add_argument('--lr-gamma', default=0.1, type=float, help='decrease lr by a factor of lr-gamma')
     parser.add_argument('--lr-warmup-epochs', default=10, type=int, help='number of warmup epochs')
+    parser.add_argument('--contrastive-alpha', default=0.3, type=float, help='view loss weight in contrastive loss')
+    parser.add_argument('--contrastive-weight', default=0.1, type=float, help='multiplier for contrastive loss')
     # output
     parser.add_argument('--print-freq', default=10, type=int, help='print frequency')
     parser.add_argument('--output-dir', default='', type=str, help='path where to save')

@@ -20,19 +20,8 @@ class RadarP4Transformer (nn.Module):
                 dim, depth, heads, dim_head,                                                # transformer
                 mlp_dim, num_classes):                                                      # output
         super().__init__()
-
-        # self.conv1 = P4DConv(in_planes=2, 
-        #                     mlp_planes=[32, 64],
-        #                     mlp_batch_norm=[True, True],
-        #                     mlp_activation=[True, True],
-        #                     spatial_kernel_size=[radius, nsamples],
-        #                     spatial_stride=4,
-        #                     temporal_kernel_size=1,
-        #                     temporal_stride=1,
-        #                     temporal_padding=[0,0],
-        #                     operator='*')
         
-        self.conv2 = P4DConv(in_planes=2, mlp_planes=[dim], mlp_batch_norm=[False], mlp_activation=[False],
+        self.tube_embedding = P4DConv(in_planes=2, mlp_planes=[dim], mlp_batch_norm=[False], mlp_activation=[False],
                                   spatial_kernel_size=[radius, nsamples], spatial_stride=spatial_stride,
                                   temporal_kernel_size=temporal_kernel_size, temporal_stride=temporal_stride, temporal_padding=[1, 0],
                                   operator='*', spatial_pooling='max', temporal_pooling='max')
@@ -51,32 +40,12 @@ class RadarP4Transformer (nn.Module):
 
     def forward(self, xyzs, old_features):                                                                                              # [B, L, N, 3], [B, L, 1, n]
         device = xyzs.get_device()
+        new_xyzs, features = self.tube_embedding(xyzs, old_features)                                                                    # [B, L, n, 3], [B, L, C, n] 
 
-        print(xyzs.shape, old_features.shape)
-
-        # xyzs_s1, features_s1 = self.conv1(xyzs, old_features)
-        new_xyzs, features = self.conv2(xyzs, old_features)                                                                             # [B, L, n, 3], [B, L, C, n] 
-
-        print(new_xyzs.shape, features.shape)
-
-        xyzts = []
-        new_xyzs = torch.split(tensor=new_xyzs, split_size_or_sections=1, dim=1)
-        new_xyzs = [torch.squeeze(xyz, dim=1).contiguous() for xyz in new_xyzs]
-        for t, xyz in enumerate(new_xyzs):
-            t = torch.ones((xyz.size()[0], xyz.size()[1], 1), dtype=torch.float32, device=device) * (t+1)
-            xyzt = torch.cat(tensors=(xyz, t), dim=2)
-            xyzts.append(xyzt)
-        xyzts = torch.stack(tensors=xyzts, dim=1)
-        xyzts = torch.reshape(xyzts, (xyzts.shape[0], xyzts.shape[1]*xyzts.shape[2], xyzts.shape[3]))                                   # [B, L*n, 4]
+        xyzts = self.xyzs_to_xyzts(new_xyzs, device)
 
         features = features.permute(0, 1, 3, 2)                                                                                         # [B, L,   n, C]
         features = torch.reshape(features, (features.shape[0], features.shape[1]*features.shape[2], features.shape[3]))                 # [B, L*n, C] 
-
-        print(xyzts.shape, features.shape)
-
-        xyzts = self.pos_embedding(xyzts.permute(0, 2, 1)).permute(0, 2, 1)
-
-        print(xyzts.shape, features.shape)
 
         embedding = xyzts + features
 
@@ -88,3 +57,18 @@ class RadarP4Transformer (nn.Module):
         output = self.mlp_head(output)
 
         return output, xyzts, features
+
+    def xyzs_to_xyzts(self, xyzs, device):
+        xyzts = []
+        xyzs = torch.split(tensor=xyzs, split_size_or_sections=1, dim=1)
+        xyzs = [torch.squeeze(xyz, dim=1).contiguous() for xyz in xyzs]
+        for t, xyz in enumerate(xyzs):
+            t = torch.ones((xyz.size()[0], xyz.size()[1], 1), dtype=torch.float32, device=device) * (t+1)
+            xyzt = torch.cat(tensors=(xyz, t), dim=2)
+            xyzts.append(xyzt)
+        xyzts = torch.stack(tensors=xyzts, dim=1)
+        xyzts = torch.reshape(xyzts, (xyzts.shape[0], xyzts.shape[1]*xyzts.shape[2], xyzts.shape[3]))                                   # [B, L*n, 4]
+
+        xyzts = self.pos_embedding(xyzts.permute(0, 2, 1)).permute(0, 2, 1)
+
+        return xyzts

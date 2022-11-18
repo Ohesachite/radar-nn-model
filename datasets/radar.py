@@ -109,6 +109,7 @@ if __name__ == '__main__':
     dataset = Radar(root='../data/radar/test', train=True)
     clip_points, clip_features, label, video_idx, positive_points, positive_features = dataset[0]
     print(clip_points)
+    print(clip_features)
     print(positive_points)
     print(len(dataset))
     print(dataset.labels)
