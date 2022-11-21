@@ -6,12 +6,11 @@ import csv
 import json
 
 class Radar(Dataset):
-    def __init__(self, root, frames_per_clip=32, frame_interval=1, num_points=2048, train=True):
+    def __init__(self, root, frames_per_clip=32, frame_interval=1, num_points=2048, mask_split=[1.0, 0.0, 0.0]):
         super(Radar, self).__init__()
 
         self.videos = []
         self.labels = []
-        self.index_map = []
         index = 0
         point_clouds = {}
         label_key = {
@@ -27,6 +26,14 @@ class Radar(Dataset):
             "su": 9
         }
 
+        self.index_map = []
+        self.train_indices = []
+        self.val_indices = []
+        self.test_indices = []
+
+        assert(sum(mask_split) == 1.0)
+
+        idx = 0
         for file_name in os.listdir(root):
             if file_name.endswith(".npy"):
                 name_parts = file_name.split('.')[0].split('_')
@@ -38,11 +45,17 @@ class Radar(Dataset):
                     nframes = int(np.amax(point_clouds[(name_parts[1], name_parts[2])][:,0])) + 1
                     for t in range(0, nframes-frame_interval*(frames_per_clip-1)):
                         self.index_map.append((index, t))
+                        if t < (nframes-frame_interval*(frames_per_clip-1)) * mask_split[0]:
+                            self.train_indices.append(idx)
+                        elif t < (nframes-frame_interval*(frames_per_clip-1)) * (mask_split[0] + mask_split[1]):
+                            self.val_indices.append(idx)
+                        else:
+                            self.test_indices.append(idx)
+                        idx += 1
                     index += 1
 
         self.frames_per_clip = frames_per_clip
         self.frame_interval = frame_interval
-        self.train = train
         self.num_points = num_points
         self.num_classes = len(label_key)
 
@@ -75,12 +88,12 @@ class Radar(Dataset):
         clip_features = clip[:,:,3:]
         clip_features = np.swapaxes(clip_features, 1, 2)
 
-        positive_clip_points, positive_clip_features = self.generate_positive_sample(clip_points, clip_features)
+        positive_clip_points, positive_clip_features = self.generate_positive_sample(clip_points, clip_features, idx)
 
         return clip_points.astype(np.float32), clip_features.astype(np.float32), label, index, positive_clip_points.astype(np.float32), positive_clip_features.astype(np.float32)
 
-    def generate_positive_sample(self, clip_points, clip_features):
-        if not self.train:
+    def generate_positive_sample(self, clip_points, clip_features, idx):
+        if idx not in self.train_indices:
             return clip_points, clip_features
 
         random_sign = np.random.randint(2) * 2 - 1
