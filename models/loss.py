@@ -72,7 +72,7 @@ def compute_negative_expectation(samples, measure, reduce_mean=False):
         return expectation
 
 
-def compute_fenchel_dual_loss(local_features, global_features, measure, positive_indicator_matrix=None):
+def compute_fenchel_dual_loss(local_features, global_features, n_global_features, measure, positive_indicator_matrix=None):
     device = local_features.get_device()
     batch_size, num_locals, local_feature_dim = local_features.shape
     _, num_globals, global_feature_dim = global_features.shape
@@ -84,12 +84,15 @@ def compute_fenchel_dual_loss(local_features, global_features, measure, positive
     product = torch.matmul(local_features, global_features)
     product = torch.reshape(product, (batch_size, num_locals, batch_size, num_globals))
 
+    n_product = torch.matmul(local_features, n_global_features)
+    n_product = torch.reshape(n_product, (batch_size, num_locals, batch_size, num_globals))
+
     if positive_indicator_matrix is None:
         positive_indicator_matrix = torch.eye(batch_size, dtype=torch.float32, device=device)
     negative_indicator_matrix = 1. - positive_indicator_matrix
 
     positive_expectation = compute_positive_expectation(product, measure, reduce_mean=False)
-    negative_expectation = compute_negative_expectation(product, measure, reduce_mean=False)
+    negative_expectation = compute_negative_expectation(n_product, measure, reduce_mean=False)
 
     positive_expectation = torch.mean(positive_expectation, dim=(1,3))
     negative_expectation = torch.mean(negative_expectation, dim=(1,3))
@@ -101,7 +104,7 @@ def compute_fenchel_dual_loss(local_features, global_features, measure, positive
 
     return negative_expectation - positive_expectation
 
-def compute_representation_loss(inputs, targets, fusion_type, positive_indicator_matrix):
+def compute_representation_loss(inputs, targets, n_global_features, fusion_type, positive_indicator_matrix):
     point_cloud_ts = targets[0]
     feature_ts = targets[1]
 
@@ -115,6 +118,6 @@ def compute_representation_loss(inputs, targets, fusion_type, positive_indicator
     else:
         raise ValueError("Unknown fusion operation: {}".format(fusion_type))
     
-    representation_loss = compute_fenchel_dual_loss(inputs, fusion_embeddings, TYPE_MEASURE_JSD, positive_indicator_matrix)
+    representation_loss = compute_fenchel_dual_loss(inputs, fusion_embeddings, n_global_features, TYPE_MEASURE_JSD, positive_indicator_matrix)
 
     return representation_loss
