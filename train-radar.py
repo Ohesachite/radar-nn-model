@@ -29,15 +29,17 @@ def train_one_epoch(model, criterion, optimizer, contrastive_optimizer, lr_sched
     metric_logger.add_meter('clips/s', utils.SmoothedValue(window_size=10, fmt='{value:.3f}'))
 
     header = 'Train: [{}]'.format(epoch)
-    for clip, features, target, _, positive_clip, positive_features in metric_logger.log_every(data_loader, print_freq, header):
+    # add negative clip and feature
+    for clip, features, target, _, positive_clip, positive_features, negative_clip, negative_features in metric_logger.log_every(data_loader, print_freq, header):
         start_time = time.time()
         clip, features, target = clip.to(device), features.to(device), target.to(device)
         positive_clip, positive_features = positive_clip.to(device), positive_features.to(device)
         output, xyzts, features = model(clip, features)
         _, positive_xyzts, positive_features = model(positive_clip, positive_features)
+        _, negative_xyzts, negative_features = model(negative_clip, negative_features)
         loss = criterion(output, target)
-        anchor_representation_loss = (1.0 - contrastive_alpha) * losses.compute_representation_loss(features, (xyzts, features), losses.TYPE_FUSION_OP_POE, None)
-        view_loss = contrastive_alpha * losses.compute_fenchel_dual_loss(features, positive_features, losses.TYPE_MEASURE_JSD)
+        anchor_representation_loss = (1.0 - contrastive_alpha) * losses.compute_representation_loss(features, (xyzts, features), negative_features, losses.TYPE_FUSION_OP_POE, None)
+        view_loss = contrastive_alpha * losses.compute_fenchel_dual_loss(features, positive_features, negative_features, losses.TYPE_MEASURE_JSD)
 
         contrastive_loss = contrastive_weight * (anchor_representation_loss + view_loss)
         # loss = loss + contrastive_loss
@@ -72,14 +74,16 @@ def validate(model, criterion, data_loader, device, epoch, print_freq, contrasti
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Validation: [{}]'.format(epoch)
     with torch.no_grad():
-        for clip, features, target, _, positive_clip, positive_features in metric_logger.log_every(data_loader, print_freq, header):
+        # add negative clip and features
+        for clip, features, target, _, positive_clip, positive_features, negative_clip, negative_features in metric_logger.log_every(data_loader, print_freq, header):
             clip, features, target = clip.to(device), features.to(device), target.to(device)
             positive_clip, positive_features = positive_clip.to(device), positive_features.to(device)
             output, xyzts, features = model(clip, features)
             _, positive_xyzts, positive_features = model(positive_clip, positive_features)
+            _, _, negative_features = model(negative_clip, negative_features)
             loss = criterion(output, target)
-            anchor_representation_loss = (1.0 - contrastive_alpha) * losses.compute_representation_loss(features, (xyzts, features), losses.TYPE_FUSION_OP_POE, None)
-            view_loss = contrastive_alpha * losses.compute_fenchel_dual_loss(features, positive_features, losses.TYPE_MEASURE_JSD)
+            anchor_representation_loss = (1.0 - contrastive_alpha) * losses.compute_representation_loss(features, (xyzts, features), negative_features, losses.TYPE_FUSION_OP_POE, None)
+            view_loss = contrastive_alpha * losses.compute_fenchel_dual_loss(features, positive_features, negative_features, losses.TYPE_MEASURE_JSD)
 
             contrastive_loss = contrastive_weight * (anchor_representation_loss + view_loss)
 
@@ -105,7 +109,7 @@ def evaluate(model, criterion, data_loader, device, result_file=None):
     video_prob = {}
     video_label = {}
     with torch.no_grad():
-        for clip, features, target, video_idx, _, _ in metric_logger.log_every(data_loader, 100, header):
+        for clip, features, target, video_idx, _, _, _, _ in metric_logger.log_every(data_loader, 100, header):
             clip = clip.to(device, non_blocking=True)
             target = target.to(device, non_blocking=True)
             output, _, _ = model(clip, features)
