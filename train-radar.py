@@ -30,16 +30,16 @@ def train_one_epoch(model, criterion, optimizer, contrastive_optimizer, lr_sched
 
     header = 'Train: [{}]'.format(epoch)
     # add negative clip and feature
-    for clip, features, target, _, positive_clip, positive_features, negative_clip, negative_features in metric_logger.log_every(data_loader, print_freq, header):
+    for clip, features, target, _, positive_clip, positive_features in metric_logger.log_every(data_loader, print_freq, header):
         start_time = time.time()
         clip, features, target = clip.to(device), features.to(device), target.to(device)
         positive_clip, positive_features = positive_clip.to(device), positive_features.to(device)
         output, xyzts, features = model(clip, features)
-        _, positive_xyzts, positive_features = model(positive_clip, positive_features)
-        _, negative_xyzts, negative_features = model(negative_clip, negative_features)
+        _, _, positive_features = model(positive_clip, positive_features)
         loss = criterion(output, target)
-        anchor_representation_loss = (1.0 - contrastive_alpha) * losses.compute_representation_loss(features, (xyzts, features), negative_features, losses.TYPE_FUSION_OP_POE, None)
-        view_loss = contrastive_alpha * losses.compute_fenchel_dual_loss(features, positive_features, negative_features, losses.TYPE_MEASURE_JSD)
+        positive_indicator_matrix = losses.compute_positive_indicator_matrix(target, device)
+        anchor_representation_loss = (1.0 - contrastive_alpha) * losses.compute_representation_loss(xyzts, (xyzts, features), losses.TYPE_FUSION_OP_MOE, positive_indicator_matrix)
+        view_loss = contrastive_alpha * losses.compute_fenchel_dual_loss(features, positive_features, losses.TYPE_MEASURE_JSD, positive_indicator_matrix=positive_indicator_matrix)
 
         contrastive_loss = contrastive_weight * (anchor_representation_loss + view_loss)
         # loss = loss + contrastive_loss
@@ -48,7 +48,7 @@ def train_one_epoch(model, criterion, optimizer, contrastive_optimizer, lr_sched
         contrastive_optimizer.zero_grad()
 
         loss.backward(retain_graph=True)
-        contrastive_loss.backward(retain_graph=True)
+        contrastive_loss.backward()
 
         optimizer.step()
         contrastive_optimizer.step()
@@ -75,15 +75,15 @@ def validate(model, criterion, data_loader, device, epoch, print_freq, contrasti
     header = 'Validation: [{}]'.format(epoch)
     with torch.no_grad():
         # add negative clip and features
-        for clip, features, target, _, positive_clip, positive_features, negative_clip, negative_features in metric_logger.log_every(data_loader, print_freq, header):
+        for clip, features, target, _, positive_clip, positive_features in metric_logger.log_every(data_loader, print_freq, header):
             clip, features, target = clip.to(device), features.to(device), target.to(device)
             positive_clip, positive_features = positive_clip.to(device), positive_features.to(device)
             output, xyzts, features = model(clip, features)
-            _, positive_xyzts, positive_features = model(positive_clip, positive_features)
-            _, _, negative_features = model(negative_clip, negative_features)
+            _, _, positive_features = model(positive_clip, positive_features)
             loss = criterion(output, target)
-            anchor_representation_loss = (1.0 - contrastive_alpha) * losses.compute_representation_loss(features, (xyzts, features), negative_features, losses.TYPE_FUSION_OP_POE, None)
-            view_loss = contrastive_alpha * losses.compute_fenchel_dual_loss(features, positive_features, negative_features, losses.TYPE_MEASURE_JSD)
+            positive_indicator_matrix = losses.compute_positive_indicator_matrix(target, device)
+            anchor_representation_loss = (1.0 - contrastive_alpha) * losses.compute_representation_loss(xyzts, (xyzts, features), losses.TYPE_FUSION_OP_MOE, positive_indicator_matrix)
+            view_loss = contrastive_alpha * losses.compute_fenchel_dual_loss(features, positive_features, losses.TYPE_MEASURE_JSD, positive_indicator_matrix=positive_indicator_matrix)
 
             contrastive_loss = contrastive_weight * (anchor_representation_loss + view_loss)
 
@@ -109,7 +109,7 @@ def evaluate(model, criterion, data_loader, device, result_file=None):
     video_prob = {}
     video_label = {}
     with torch.no_grad():
-        for clip, features, target, video_idx, _, _, _, _ in metric_logger.log_every(data_loader, 100, header):
+        for clip, features, target, video_idx, _, _ in metric_logger.log_every(data_loader, 100, header):
             clip = clip.to(device, non_blocking=True)
             target = target.to(device, non_blocking=True)
             output, _, _ = model(clip, features)
@@ -297,8 +297,9 @@ def main(args):
     print('Training time {}'.format(total_time_str))
     print('Accuracy {}'.format(acc))
 
-    result_file.write('Final accuracy: {}'.format(acc))
-    result_file.close()
+    if result_file is not None:
+        result_file.write('Final accuracy: {}'.format(acc))
+        result_file.close()
 
 
 def parse_args():
@@ -337,7 +338,7 @@ def parse_args():
     parser.add_argument('--lr-milestones', nargs='+', default=[20, 30], type=int, help='decrease lr on milestones')
     parser.add_argument('--lr-gamma', default=0.1, type=float, help='decrease lr by a factor of lr-gamma')
     parser.add_argument('--lr-warmup-epochs', default=10, type=int, help='number of warmup epochs')
-    parser.add_argument('--contrastive-alpha', default=0.3, type=float, help='view loss weight in contrastive loss')
+    parser.add_argument('--contrastive-alpha', default=0.1, type=float, help='view loss weight in contrastive loss')
     parser.add_argument('--contrastive-weight', default=0.1, type=float, help='multiplier for contrastive loss')
     # output
     parser.add_argument('--print-freq', default=10, type=int, help='print frequency')

@@ -52,8 +52,8 @@ class RadarP4Transformer (nn.Module):
         if self.emb_relu:
             embedding = self.emb_relu(embedding)
 
-        output = self.transformer(embedding)
-        output = torch.max(output, dim=1, keepdim=False, out=None)[0]
+        new_features = self.transformer(embedding)
+        output = torch.max(new_features, dim=1, keepdim=False, out=None)[0]
         output = self.mlp_head(output)
 
         return output, xyzts, features

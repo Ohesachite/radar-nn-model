@@ -39,9 +39,9 @@ class P4Transformer(nn.Module):
             nn.Linear(mlp_dim, num_classes),
         )
 
-    def forward(self, input):                                                                                                               # [B, L, N, 3]
+    def forward(self, input, features):                                                                                                               # [B, L, N, 3]
         device = input.get_device()
-        xyzs, features = self.tube_embedding(input)                                                                                         # [B, L, n, 3], [B, L, C, n] 
+        xyzs, features = self.tube_embedding(input, features)                                                                                         # [B, L, n, 3], [B, L, C, n] 
 
         xyzts = []
         xyzs = torch.split(tensor=xyzs, split_size_or_sections=1, dim=1)

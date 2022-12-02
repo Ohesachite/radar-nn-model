@@ -18,7 +18,6 @@ def process_radar_data(root, fps=16, train=True, eps=0.05, min_samples=3, radars
                 if name_parts[0] == "label":
                     with open(os.path.join(root, file_name)) as csv_file:
                         video = np.array(list(csv.reader(csv_file, delimiter=',', quoting=csv.QUOTE_NONNUMERIC)))
-                        video[:,1] -= np.amin(video[:,1])
                         video[:,7] /= 10000
                         video[:,6] /= 2
 
@@ -43,8 +42,6 @@ def process_radar_data(root, fps=16, train=True, eps=0.05, min_samples=3, radars
     comb_point_clouds = {}
     new_point_clouds = {}
 
-    frames_skipped = 0
-
     for key in point_clouds.keys():
         comb_point_clouds[key] = np.concatenate(point_clouds[key], axis=0)
         print("Initial number of points:", comb_point_clouds[key].shape[0])
@@ -54,6 +51,8 @@ def process_radar_data(root, fps=16, train=True, eps=0.05, min_samples=3, radars
         n_frames = int(max_time // frame_period + 1)
         print("Number of frames:", n_frames)
 
+        frames_skipped = 0
+
         new_point_clouds[key] = []
         for frame_n in range(n_frames):
             frame_mask = np.logical_and(frame_n * frame_period <= comb_point_clouds[key][:,0], comb_point_clouds[key][:,0] < (frame_n + 1) * frame_period)
@@ -61,7 +60,7 @@ def process_radar_data(root, fps=16, train=True, eps=0.05, min_samples=3, radars
                 print("Zero point frames detected from time", frame_n * frame_period, "to", (frame_n + 1) * frame_period)
                 frames_skipped = frames_skipped + 1
                 continue
-            dbscan = DBSCAN(eps=eps, min_samples=min_samples).fit(comb_point_clouds[key][frame_mask, 3:-1])
+            dbscan = DBSCAN(eps=eps, min_samples=min_samples).fit(comb_point_clouds[key][frame_mask, 3:6])
             if all(dbscan.labels_ == -1):
                 print("DBSCAN caused zero point frame from time", frame_n * frame_period, "to", (frame_n + 1) * frame_period, "! Dropping the frame!")
                 frames_skipped = frames_skipped + 1
@@ -101,12 +100,27 @@ def process_radar_data(root, fps=16, train=True, eps=0.05, min_samples=3, radars
             np.save(new_file, new_point_clouds[key])
 
 if __name__ == "__main__":
-    process_radar_data(root='/workspace/radar-nn-model/data/radar/set6', eps=0.04, min_samples=3, radars=[0,1,2])                           # 1-3
-    process_radar_data(root='/workspace/radar-nn-model/data/radar/set7', eps=0.04, min_samples=3, radars=[0,1,2])                           # 4-6
-    process_radar_data(root='/workspace/radar-nn-model/data/radar/set6', eps=0.06, min_samples=5, train=False, radars=[0])                  # 1-3
-    process_radar_data(root='/workspace/radar-nn-model/data/radar/set6', eps=0.06, min_samples=5, train=False, radars=[1], label_offset=6)  # 7-9
-    process_radar_data(root='/workspace/radar-nn-model/data/radar/set6', eps=0.06, min_samples=5, train=False, radars=[2], label_offset=9)  # 10-12
-    process_radar_data(root='/workspace/radar-nn-model/data/radar/set7', eps=0.06, min_samples=5, train=False, radars=[0])                  # 4-6
-    process_radar_data(root='/workspace/radar-nn-model/data/radar/set7', eps=0.06, min_samples=5, train=False, radars=[1], label_offset=9)  # 13-15
-    process_radar_data(root='/workspace/radar-nn-model/data/radar/set7', eps=0.06, min_samples=5, train=False, radars=[2], label_offset=12) # 16-18
-    
+    process_radar_data(root='/workspace/radar-nn-model/data/radar/set8_0', eps=0.04, min_samples=3, radars=[0,1,2])                             # 1-3
+    # process_radar_data(root='/workspace/radar-nn-model/data/radar/set8_60', eps=0.04, min_samples=3, radars=[0,1,2], label_offset=3)            # 4-6
+    # process_radar_data(root='/workspace/radar-nn-model/data/radar/set8_120', eps=0.04, min_samples=3, radars=[0,1,2], label_offset=6)           # 7-9
+    process_radar_data(root='/workspace/radar-nn-model/data/radar/set8_180', eps=0.04, min_samples=3, radars=[0,1,2], label_offset=9)           # 10-12
+    # process_radar_data(root='/workspace/radar-nn-model/data/radar/set8_240', eps=0.04, min_samples=3, radars=[0,1,2], label_offset=12)          # 13-15
+    # process_radar_data(root='/workspace/radar-nn-model/data/radar/set8_300', eps=0.04, min_samples=3, radars=[0,1,2], label_offset=15)          # 16-18
+    process_radar_data(root='/workspace/radar-nn-model/data/radar/set8_0', eps=0.06, min_samples=5, radars=[0], label_offset=18)                # 19-21
+    process_radar_data(root='/workspace/radar-nn-model/data/radar/set8_0', eps=0.06, min_samples=5, radars=[1], label_offset=21)                # 22-24
+    process_radar_data(root='/workspace/radar-nn-model/data/radar/set8_0', eps=0.06, min_samples=5, radars=[2], label_offset=24)                # 25-27
+    process_radar_data(root='/workspace/radar-nn-model/data/radar/set8_180', eps=0.06, min_samples=5, radars=[0], label_offset=27)              # 28-30
+    process_radar_data(root='/workspace/radar-nn-model/data/radar/set8_180', eps=0.06, min_samples=5, radars=[1], label_offset=30)              # 31-33
+    process_radar_data(root='/workspace/radar-nn-model/data/radar/set8_180', eps=0.06, min_samples=5, radars=[2], label_offset=33)              # 34-36
+    process_radar_data(root='/workspace/radar-nn-model/data/radar/set8_60', eps=0.06, min_samples=5, train=False, radars=[0])                   # 1-3
+    process_radar_data(root='/workspace/radar-nn-model/data/radar/set8_60', eps=0.06, min_samples=5, train=False, radars=[1], label_offset=3)   # 22-24
+    process_radar_data(root='/workspace/radar-nn-model/data/radar/set8_60', eps=0.06, min_samples=5, train=False, radars=[2], label_offset=6)   # 25-27
+    process_radar_data(root='/workspace/radar-nn-model/data/radar/set8_240', eps=0.06, min_samples=5, train=False, radars=[0], label_offset=9)  # 28-30
+    process_radar_data(root='/workspace/radar-nn-model/data/radar/set8_240', eps=0.06, min_samples=5, train=False, radars=[1], label_offset=12) # 31-33
+    process_radar_data(root='/workspace/radar-nn-model/data/radar/set8_240', eps=0.06, min_samples=5, train=False, radars=[2], label_offset=15) # 34-36
+    process_radar_data(root='/workspace/radar-nn-model/data/radar/set8_120', eps=0.06, min_samples=5, train=False, radars=[0], label_offset=18) # 19-21
+    process_radar_data(root='/workspace/radar-nn-model/data/radar/set8_120', eps=0.06, min_samples=5, train=False, radars=[1], label_offset=21) # 22-24
+    process_radar_data(root='/workspace/radar-nn-model/data/radar/set8_120', eps=0.06, min_samples=5, train=False, radars=[2], label_offset=24) # 25-27
+    process_radar_data(root='/workspace/radar-nn-model/data/radar/set8_300', eps=0.06, min_samples=5, train=False, radars=[0], label_offset=27) # 28-30
+    process_radar_data(root='/workspace/radar-nn-model/data/radar/set8_300', eps=0.06, min_samples=5, train=False, radars=[1], label_offset=30) # 31-33
+    process_radar_data(root='/workspace/radar-nn-model/data/radar/set8_300', eps=0.06, min_samples=5, train=False, radars=[2], label_offset=33) # 34-36

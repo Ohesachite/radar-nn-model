@@ -16,7 +16,7 @@ import utils
 
 from scheduler import WarmupMultiStepLR
 
-from datasets.msr import MSRAction3D
+from datasets.radar import Radar
 import models.msr as Models
 
 def train_one_epoch(model, criterion, optimizer, lr_scheduler, data_loader, device, epoch, print_freq):
@@ -26,10 +26,10 @@ def train_one_epoch(model, criterion, optimizer, lr_scheduler, data_loader, devi
     metric_logger.add_meter('clips/s', utils.SmoothedValue(window_size=10, fmt='{value:.3f}'))
 
     header = 'Epoch: [{}]'.format(epoch)
-    for clip, target, _ in metric_logger.log_every(data_loader, print_freq, header):
+    for clip, features, target, _, _, _ in metric_logger.log_every(data_loader, print_freq, header):
         start_time = time.time()
         clip, target = clip.to(device), target.to(device)
-        output = model(clip)
+        output = model(clip, features)
         loss = criterion(output, target)
 
         optimizer.zero_grad()
@@ -52,10 +52,10 @@ def evaluate(model, criterion, data_loader, device):
     video_prob = {}
     video_label = {}
     with torch.no_grad():
-        for clip, target, video_idx in metric_logger.log_every(data_loader, 100, header):
+        for clip, features, target, video_idx, _, _ in metric_logger.log_every(data_loader, 100, header):
             clip = clip.to(device, non_blocking=True)
             target = target.to(device, non_blocking=True)
-            output = model(clip)
+            output = model(clip, features)
             loss = criterion(output, target)
 
             acc1, acc5 = utils.accuracy(output, target, topk=(1, 5))
@@ -124,20 +124,20 @@ def main(args):
 
     st = time.time()
 
-    dataset = MSRAction3D(
-            root=args.data_path,
+    dataset = Radar(
+            root=args.train_path,
             frames_per_clip=args.clip_len,
             frame_interval=args.frame_interval,
             num_points=args.num_points,
-            train=True
+            mask_split=[1.0, 0.0, 0.0]
     )
 
-    dataset_test = MSRAction3D(
-            root=args.data_path,
+    dataset_test = Radar(
+            root=args.test_path,
             frames_per_clip=args.clip_len,
             frame_interval=args.frame_interval,
             num_points=args.num_points,
-            train=False
+            mask_split=[0.0, 0.0, 1.0]
     )
 
     print("Creating data loaders")
@@ -211,15 +211,16 @@ def parse_args():
     import argparse
     parser = argparse.ArgumentParser(description='P4Transformer Model Training')
 
-    parser.add_argument('--data-path', default='/scratch/HeheFan-data/MSR-Action3D', type=str, help='dataset')
+    parser.add_argument('--train-path', default='/workspace/radar-nn-model/data/radar/train', type=str, help='training dataset')
+    parser.add_argument('--test-path', default='/workspace/radar-nn-model/data/radar/test', type=str, help='testing dataset')
     parser.add_argument('--seed', default=0, type=int, help='random seed')
     parser.add_argument('--model', default='P4Transformer', type=str, help='model')
     # input
     parser.add_argument('--clip-len', default=24, type=int, metavar='N', help='number of frames per clip')
     parser.add_argument('--frame-interval', default=1, type=int, metavar='N', help='interval of sampled frames')
-    parser.add_argument('--num-points', default=2048, type=int, metavar='N', help='number of points per frame')
+    parser.add_argument('--num-points', default=1024, type=int, metavar='N', help='number of points per frame')
     # P4D
-    parser.add_argument('--radius', default=0.7, type=float, help='radius for the ball query')
+    parser.add_argument('--radius', default=0.5, type=float, help='radius for the ball query')
     parser.add_argument('--nsamples', default=32, type=int, help='number of neighbors for the ball query')
     parser.add_argument('--spatial-stride', default=32, type=int, help='spatial subsampling rate')
     parser.add_argument('--temporal-kernel-size', default=3, type=int, help='temporal kernel size')
@@ -233,7 +234,7 @@ def parse_args():
     parser.add_argument('--dim-head', default=128, type=int, help='transformer dim for each head')
     parser.add_argument('--mlp-dim', default=2048, type=int, help='transformer mlp dim')
     # training
-    parser.add_argument('-b', '--batch-size', default=14, type=int)
+    parser.add_argument('-b', '--batch-size', default=10, type=int)
     parser.add_argument('--epochs', default=50, type=int, metavar='N', help='number of total epochs to run')
     parser.add_argument('-j', '--workers', default=16, type=int, metavar='N', help='number of data loading workers (default: 16)')
     parser.add_argument('--lr', default=0.01, type=float, help='initial learning rate')
