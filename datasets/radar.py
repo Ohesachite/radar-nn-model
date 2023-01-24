@@ -114,12 +114,12 @@ class Radar(Dataset):
         clip_features = clip[:,:,3:]
         clip_features = np.swapaxes(clip_features, 1, 2)
 
-        if idx in self.train_indices:
-            # scale height and translate body
-            scale = np.random.uniform(0.9, 1.1, size=1)
-            offset = np.random.uniform(-0.5, 0.5, size=2)
-            clip_points[:,:,2] = clip_points[:,:,2] * scale
-            clip_points[:,:,:2] = clip_points[:,:,:2] + offset
+        # if idx in self.train_indices:
+        #     # scale height and translate body
+        #     scale = np.random.uniform(0.9, 1.1, size=1)
+        #     offset = np.random.uniform(-0.5, 0.5, size=2)
+        #     clip_points[:,:,2] = clip_points[:,:,2] * scale
+        #     clip_points[:,:,:2] = clip_points[:,:,:2] + offset
 
         positive_clip_points, positive_clip_features = self.generate_positive_sample(clip_points, clip_features, idx)
 
@@ -159,12 +159,11 @@ class Radar(Dataset):
             new_clip_features = new_clip[:,:,3:]
             new_clip_features = np.swapaxes(new_clip_features, 1, 2)
 
-            if idx in self.train_indices:
-                # scale height and translate body
-                scale = np.random.uniform(0.9, 1.1, size=1)
-                offset = np.random.uniform(-0.5, 0.5, size=2)
-                new_clip_points[:,:,2] = new_clip_points[:,:,2] * scale
-                new_clip_points[:,:,:2] = new_clip_points[:,:,:2] + offset
+            # scale height and translate body
+            # scale = np.random.uniform(0.9, 1.1, size=1)
+            # offset = np.random.uniform(-0.5, 0.5, size=2)
+            # new_clip_points[:,:,2] = new_clip_points[:,:,2] * scale
+            # new_clip_points[:,:,:2] = new_clip_points[:,:,:2] + offset
 
         else:
             random_sign = np.random.randint(2) * 2 - 1

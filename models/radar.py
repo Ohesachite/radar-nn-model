@@ -72,3 +72,64 @@ class RadarP4Transformer (nn.Module):
         xyzts = self.pos_embedding(xyzts.permute(0, 2, 1)).permute(0, 2, 1)
 
         return xyzts
+
+class PointCloudEncoder (nn.Module):
+    def __init__(self, radius, nsamples, embedding_dim=1024):
+
+        # Spatial Convolution
+        self.conv1 = P4DConv(in_planes=2,
+                             mlp_planes=[32,64,128],
+                             mlp_batch_norm=[True, True, True],
+                             mlp_activation=[True, True, True],
+                             spatial_kernel_size=[radius, nsamples],
+                             temporal_kernel_size=1,
+                             spatial_stride=8,
+                             temporal_stride=1,
+                             temporal_padding=[0,0])
+
+        # Temporal Convolution
+        self.conv2 = P4DConv(in_planes=128,
+                             mlp_planes=[256, 512, embedding_dim],
+                             mlp_batch_norm=[True, True, True],
+                             mlp_activation=[True, True, True],
+                             spatial_kernel_size=[2*radius, nsamples],
+                             temporal_kernel_size=3,
+                             spatial_stride=4,
+                             temporal_stride=1,
+                             temporal_padding=[0,0])
+
+    def forward(xyzs, features):
+
+        xyzs, features = self.conv1(xyzs, features)
+        xyzs, features = self.conv2(xyzs, features)
+
+        embeddings = torch.max(features, dim=2, keepdim=False)[0]
+
+        return xyzs, embeddings
+
+class RadarPeriodEstimator (nn.Module):
+    def __init__(self, radius, nsamples, 
+                embedding_dim=1024)
+
+        self.encoder = PointCloudEncoder(radius, nsamples, embedding_dim=embedding_dim)
+
+        self.conv_3x3_layer = nn.Sequential(
+            nn.Conv2d(in_channels=1, out_channels=32, kernel_size=3, padding='same')
+            nn.ReLu()
+        )
+
+    def forward(xyzs, features):
+
+        xyzs, embeddings = self.encoder(xyzs, features)
+
+        features = self.get_tsm(embeddings)
+
+        features = self.conv_3x3_layer(features)
+        features = torch.reshape(features, (features.shape[0], features.shape[1], -1))
+
+    def get_tsm(embeddings, temperature=13.544):
+        
+        sims = torch.cdist(embeddings, embeddings, p=2.0)
+        sims /= temperature
+        sims = F.softmax(sims, dim=-1)
+        sims = torch.unsqueeze(sims, -1)
