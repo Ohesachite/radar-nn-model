@@ -109,7 +109,7 @@ class PointCloudEncoder (nn.Module):
 
 class RadarPeriodEstimator (nn.Module):
     def __init__(self, radius, nsamples, 
-                embedding_dim=1024)
+                embedding_dim=1024):
 
         self.encoder = PointCloudEncoder(radius, nsamples, embedding_dim=embedding_dim)
 
