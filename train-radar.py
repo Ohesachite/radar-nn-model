@@ -311,7 +311,7 @@ def parse_args():
     parser.add_argument('--seed', default=0, type=int, help='random seed')
     parser.add_argument('--model', default='RadarP4Transformer', type=str, help='model')
     # input
-    parser.add_argument('--clip-len', default=16, type=int, metavar='N', help='number of frames per clip')
+    parser.add_argument('--clip-len', default=24, type=int, metavar='N', help='number of frames per clip')
     parser.add_argument('--frame-interval', default=1, type=int, metavar='N', help='interval of sampled frames')
     parser.add_argument('--num-points', default=1024, type=int, metavar='N', help='number of points per frame')
     # P4D
@@ -329,7 +329,7 @@ def parse_args():
     parser.add_argument('--dim-head', default=128, type=int, help='transformer dim for each head')
     parser.add_argument('--mlp-dim', default=2048, type=int, help='transformer mlp dim')
     # training
-    parser.add_argument('-b', '--batch-size', default=15, type=int)
+    parser.add_argument('-b', '--batch-size', default=20, type=int)
     parser.add_argument('--epochs', default=40, type=int, metavar='N', help='number of total epochs to run')
     parser.add_argument('-j', '--workers', default=10, type=int, metavar='N', help='number of data loading workers (default: 16)')
     parser.add_argument('--lr', default=0.01, type=float, help='initial learning rate')
