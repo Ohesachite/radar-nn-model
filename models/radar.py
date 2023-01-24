@@ -114,8 +114,8 @@ class RadarPeriodEstimator (nn.Module):
         self.encoder = PointCloudEncoder(radius, nsamples, embedding_dim=embedding_dim)
 
         self.conv_3x3_layer = nn.Sequential(
-            nn.Conv2d(in_channels=1, out_channels=32, kernel_size=3, padding='same')
-            nn.ReLu()
+            nn.Conv2d(in_channels=1, out_channels=32, kernel_size=3, padding='same'),
+            nn.ReLU()
         )
 
     def forward(xyzs, features):
