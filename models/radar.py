@@ -24,7 +24,7 @@ class RadarP4Transformer (nn.Module):
         self.tube_embedding = P4DConv(in_planes=2, mlp_planes=[dim], mlp_batch_norm=[False], mlp_activation=[False],
                                   spatial_kernel_size=[radius, nsamples], spatial_stride=spatial_stride,
                                   temporal_kernel_size=temporal_kernel_size, temporal_stride=temporal_stride, temporal_padding=[1, 0],
-                                  operator='*', spatial_pooling='max', temporal_pooling='max')
+                                  operator='+', spatial_pooling='max', temporal_pooling='max')
 
         self.pos_embedding = nn.Conv1d(in_channels=4, out_channels=dim, kernel_size=1, stride=1, padding=0, bias=True)
         self.emb_relu = nn.ReLU()
@@ -74,7 +74,8 @@ class RadarP4Transformer (nn.Module):
         return xyzts
 
 class PointCloudEncoder (nn.Module):
-    def __init__(self, radius, nsamples, embedding_dim=1024):
+    def __init__(self, radius, nsamples, input_dim=1024, embedding_dim=1024):
+        super(PointCloudEncoder, self).__init__()
 
         # Spatial Convolution
         self.conv1 = P4DConv(in_planes=2,
@@ -96,40 +97,121 @@ class PointCloudEncoder (nn.Module):
                              temporal_kernel_size=3,
                              spatial_stride=4,
                              temporal_stride=1,
-                             temporal_padding=[0,0])
+                             temporal_padding=[1,1])
 
-    def forward(xyzs, features):
+        # Point location features embedding
+        self.pos_encoding = nn.Sequential(
+            nn.Conv2d(in_channels=3, out_channels=embedding_dim, kernel_size=1, stride=1, padding=0, bias=True),
+            nn.BatchNorm2d(embedding_dim)
+        )
+
+        # Max pooling
+        pool_size = input_dim // 32
+        self.pooling = nn.MaxPool2d(kernel_size=(pool_size, 1), stride=(pool_size, 1))
+
+    def forward(self, xyzs, features):
 
         xyzs, features = self.conv1(xyzs, features)
         xyzs, features = self.conv2(xyzs, features)
 
-        embeddings = torch.max(features, dim=2, keepdim=False)[0]
+        xyzs = self.pos_encoding(xyzs.permute(0, 3, 1, 2)).permute(0, 2, 3, 1)
+        features = features.permute(0, 1, 3, 2)
 
-        return xyzs, embeddings
+        embeddings = xyzs + features
+        embeddings = torch.squeeze(self.pooling(embeddings), dim=2)
+
+        return embeddings
 
 class RadarPeriodEstimator (nn.Module):
     def __init__(self, radius, nsamples, 
-                embedding_dim=1024):
+                tsm_conv_dim=32, embedding_dim=1024, n_frames=64, fc_depth=3):
+        super(RadarPeriodEstimator, self).__init__()
+
+        self.num_frames = n_frames
 
         self.encoder = PointCloudEncoder(radius, nsamples, embedding_dim=embedding_dim)
+        
+        self.tsm_softmax = nn.Softmax(dim=-1)
 
         self.conv_3x3_layer = nn.Sequential(
-            nn.Conv2d(in_channels=1, out_channels=32, kernel_size=3, padding='same'),
+            nn.Conv2d(in_channels=1, out_channels=tsm_conv_dim, kernel_size=3, padding='same'),
+            nn.BatchNorm2d(tsm_conv_dim),
             nn.ReLU()
         )
 
-    def forward(xyzs, features):
-
-        xyzs, embeddings = self.encoder(xyzs, features)
-
-        features = self.get_tsm(embeddings)
-
-        features = self.conv_3x3_layer(features)
-        features = torch.reshape(features, (features.shape[0], features.shape[1], -1))
-
-    def get_tsm(embeddings, temperature=13.544):
+        self.input_projection1 = nn.Sequential(
+            nn.Linear(in_features=n_frames*tsm_conv_dim, out_features=embedding_dim),
+            nn.LayerNorm(embedding_dim)
+        )
+        self.transformer1 = Transformer(embedding_dim, 1, 4, 128, 2048)
         
+        self.dropout = nn.Dropout(p=0.25)
+        num_preds = n_frames//2
+        self.fc_layers1 = nn.ModuleList([])
+        for i in range(fc_depth-1):
+            self.fc_layers1.append(nn.Sequential(
+                nn.Linear(in_features=embedding_dim, out_features=embedding_dim),
+                nn.LayerNorm(embedding_dim),
+                nn.ReLU()
+            ))
+        self.fc_layers1.append(nn.Sequential(
+            nn.Linear(in_features=embedding_dim, out_features=num_preds)),
+        )
+
+        self.input_projection2 = nn.Sequential(
+            nn.Linear(in_features=n_frames*tsm_conv_dim, out_features=embedding_dim),
+            nn.LayerNorm(embedding_dim)
+        )
+        self.transformer2 = Transformer(embedding_dim, 1, 4, 128, 1024)
+
+        num_preds = 1
+        self.fc_layers2 = nn.ModuleList([])
+        for i in range(fc_depth-1):
+            self.fc_layers2.append(nn.Sequential(
+                nn.Linear(in_features=embedding_dim, out_features=embedding_dim),
+                nn.LayerNorm(embedding_dim),
+                nn.ReLU()
+            ))
+        self.fc_layers2.append(nn.Sequential(
+            nn.Linear(in_features=embedding_dim, out_features=num_preds),
+            nn.Sigmoid()
+        ))
+
+    def forward(self, xyzs, features, ret_tsm = False):
+        batch_size = features.shape[0]
+        nframes = features.shape[1]
+
+        embeddings = self.encoder(xyzs, features)
+
+        tsm = self.get_tsm(embeddings)
+
+        features = self.conv_3x3_layer(tsm).permute(0, 2, 3, 1)
+        predictor_features = torch.reshape(features, (batch_size, nframes, -1))
+
+        # Period Estimator
+        features = self.input_projection1(predictor_features)
+        output_period = self.transformer1(features)
+        for fc_layer in self.fc_layers1:
+            output_period = self.dropout(output_period)
+            output_period = fc_layer(output_period)
+
+        # Within period estimator
+        features = self.input_projection2(predictor_features)
+        within_period = self.transformer2(features)
+        for fc_layer in self.fc_layers2:
+            within_period = self.dropout(within_period)
+            within_period = fc_layer(within_period)
+        within_period = torch.squeeze(within_period)
+
+        if ret_tsm:
+            return output_period, within_period, embeddings
+        return output_period, within_period
+
+    def get_tsm(self, embeddings, temperature=13.544):
+    
         sims = torch.cdist(embeddings, embeddings, p=2.0)
-        sims /= temperature
-        sims = F.softmax(sims, dim=-1)
-        sims = torch.unsqueeze(sims, -1)
+        sims = sims / temperature
+        sims = self.tsm_softmax(sims)
+        sims = torch.unsqueeze(sims, 1)
+
+        return sims

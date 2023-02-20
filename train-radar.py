@@ -221,9 +221,6 @@ def main(args):
 
     data_loader_test = torch.utils.data.DataLoader(dataset_test, batch_size=args.batch_size, num_workers=args.workers, pin_memory=True)
 
-    anchor_indicator_matrix = None
-    positive_indicator_matrix = None
-
     print("Creating model")
     Model = getattr(Models, args.model)
     model = Model(radius=args.radius, nsamples=args.nsamples, spatial_stride=args.spatial_stride,
@@ -306,8 +303,8 @@ def parse_args():
     import argparse
     parser = argparse.ArgumentParser(description='P4Transformer Model Training')
 
-    parser.add_argument('--train-path', default='/workspace/radar-nn-model/data/radar/train', type=str, help='training dataset')
-    parser.add_argument('--test-path', default='/workspace/radar-nn-model/data/radar/test', type=str, help='testing dataset')
+    parser.add_argument('--train-path', default='/home/alan/Documents/radar-nn-model/data/radar/train', type=str, help='training dataset')
+    parser.add_argument('--test-path', default='/home/alan/Documents/radar-nn-model/data/radar/test', type=str, help='testing dataset')
     parser.add_argument('--seed', default=0, type=int, help='random seed')
     parser.add_argument('--model', default='RadarP4Transformer', type=str, help='model')
     # input

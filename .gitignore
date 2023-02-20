@@ -1,4 +1,7 @@
 data/*
 !data/radar/process_data.py
 results
-*/__pycache__/*
+__pycache__
+ckpts
+modules/build
+modules/dist

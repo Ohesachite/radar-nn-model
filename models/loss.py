@@ -44,13 +44,12 @@ def compute_positive_indicator_matrix(anchors, matches, distance_fn, max_positiv
 
 
 def compute_positive_expectation(samples, measure, reduce_mean=False):
-    softplus = nn.Softplus()
     if measure == TYPE_MEASURE_GAN:
-        expectation = softplus(-samples)
+        expectation = F.softplus(-samples)
     elif measure == TYPE_MEASURE_JSD:
-        expectation = math.log(2.) - softplus(-samples)
+        expectation = math.log(2.) - F.softplus(-samples)
     elif measure == TYPE_MEASURE_KL:
-        expectation = sample
+        expectation = samples
 
     if reduce_mean:
         return torch.mean(expectation)
@@ -58,11 +57,10 @@ def compute_positive_expectation(samples, measure, reduce_mean=False):
         return expectation
 
 def compute_negative_expectation(samples, measure, reduce_mean=False):
-    softplus = nn.Softplus()
     if measure == TYPE_MEASURE_GAN:
-        expectation = softplus(-samples) + samples
+        expectation = F.softplus(-samples) + samples
     elif measure == TYPE_MEASURE_JSD:
-        expectation = softplus(-samples) + samples - math.log(2.)
+        expectation = F.softplus(-samples) + samples - math.log(2.)
     elif measure == TYPE_MEASURE_KL:
         expectation = torch.exp(samples - 1.)
 
@@ -76,6 +74,7 @@ def compute_fenchel_dual_loss(local_features, global_features, measure, positive
     device = local_features.get_device()
     batch_size, num_locals, local_feature_dim = local_features.shape
     _, num_globals, global_feature_dim = global_features.shape
+    assert local_feature_dim == global_feature_dim, "Mismatch in feature sizes: {0} vs {1}".format(local_feature_dim, global_feature_dim)
 
     local_features = torch.reshape(local_features, (-1, local_feature_dim))
     global_features = torch.reshape(global_features, (global_feature_dim, -1))
