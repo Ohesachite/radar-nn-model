@@ -225,7 +225,7 @@ def main():
     print("Loading data")
 
     dataset_train = Radar(
-            root='/home/alan/Documents/radar-nn-model/data/radar/train',
+            root='/storage/scratch1/9/aliu325/radar-nn-model/data/radar/train',
             num_points=1024,
             frames_per_clip=64,
             mode=2,
@@ -233,7 +233,7 @@ def main():
     )
 
     dataset_test = Radar(
-            root='/home/alan/Documents/radar-nn-model/data/radar/test',
+            root='/storage/scratch1/9/aliu325/radar-nn-model/data/radar/test',
             num_points=1024,
             frames_per_clip=64,
             mode=1,

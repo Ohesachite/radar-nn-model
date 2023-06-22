@@ -4,8 +4,10 @@ import numpy as np
 import csv
 import json
 from sklearn.cluster import DBSCAN
+import scipy as sp
+from scipy.interpolate import griddata
 
-def process_radar_data(root, fps=16, train=True, eps=0.05, min_samples=3, radars=None, label_offset=None):
+def process_radar_data(root, fps=16, train=True, eps=0.05, min_samples=3, radars=None, label_offset=None, count_metadata=False):
 
     point_clouds = {}
     count_data = {}
@@ -22,8 +24,10 @@ def process_radar_data(root, fps=16, train=True, eps=0.05, min_samples=3, radars
                 for np1, np2, sta, end, cnt in reader:
                     values = [str(np1), str(np2), int(sta), int(end), int(cnt)]
                     read_data.append(values)
-                for values in read_data:
-                    cycle_data[(values[0], values[1])] = [values[2], values[3], values[4]]
+                if count_metadata:
+                    for values in read_data:
+                        cycle_data[(values[0], values[1])] = [values[2], values[3], values[4]]
+
         elif file_name.endswith(".csv"):
             name_parts = file_name.split('.')[0].split('_')
             if name_parts[0] == "label":
@@ -70,21 +74,23 @@ def process_radar_data(root, fps=16, train=True, eps=0.05, min_samples=3, radars
             if comb_point_clouds[key][frame_mask, :].shape[0] == 0:
                 print("Zero point frames detected from time", frame_n * frame_period, "to", (frame_n + 1) * frame_period)
                 frames_skipped = frames_skipped + 1
-                if key in cycle_data.keys():
-                    if frame_n < cycle_data[key][0]:
-                        cycle_data[key][0] = cycle_data[key][0] - 1
-                    elif frame_n >= n_frames - cycle_data[key][1]:
-                        cycle_data[key][1] = cycle_data[key][1] - 1
+                if count_metadata:
+                    if key in cycle_data.keys():
+                        if frame_n < cycle_data[key][0]:
+                            cycle_data[key][0] = cycle_data[key][0] - 1
+                        elif frame_n >= n_frames - cycle_data[key][1]:
+                            cycle_data[key][1] = cycle_data[key][1] - 1
                 continue
             dbscan = DBSCAN(eps=eps, min_samples=min_samples).fit(comb_point_clouds[key][frame_mask, 3:6])
             if all(dbscan.labels_ == -1):
                 print("DBSCAN caused zero point frame from time", frame_n * frame_period, "to", (frame_n + 1) * frame_period, "! Dropping the frame!")
                 frames_skipped = frames_skipped + 1
-                if key in cycle_data.keys():
-                    if frame_n < cycle_data[key][0]:
-                        cycle_data[key][0] = cycle_data[key][0] - 1
-                    elif frame_n >= n_frames - cycle_data[key][1]:
-                        cycle_data[key][1] = cycle_data[key][1] - 1
+                if count_metadata:
+                    if key in cycle_data.keys():
+                        if frame_n < cycle_data[key][0]:
+                            cycle_data[key][0] = cycle_data[key][0] - 1
+                        elif frame_n >= n_frames - cycle_data[key][1]:
+                            cycle_data[key][1] = cycle_data[key][1] - 1
                 continue
             filtered_points = comb_point_clouds[key][frame_mask,2:][dbscan.labels_ != -1,:]
             frame_indicator = np.ones((filtered_points.shape[0], 1)) * (frame_n - frames_skipped)
@@ -93,42 +99,291 @@ def process_radar_data(root, fps=16, train=True, eps=0.05, min_samples=3, radars
         new_point_clouds[key] = np.concatenate(new_point_clouds[key], axis=0)
 
         print("New number of points:", new_point_clouds[key].shape[0])
-        if key in cycle_data.keys():
-            print("Start frame:", cycle_data[key][0], ", End frame:", n_frames - frames_skipped - cycle_data[key][1] - 1, ", Count:", cycle_data[key][2])
+        if count_metadata:
+            if key in cycle_data.keys():
+                print("Start frame:", cycle_data[key][0], ", End frame:", n_frames - frames_skipped - cycle_data[key][1] - 1, ", Count:", cycle_data[key][2])
 
     if train:
         new_root = os.path.join(root, "../train")
     else:
-        new_root = os.path.join(root, "../test")
+        new_root = os.path.join(root, "../test_1r")
 
     if not os.path.exists(new_root):
         os.makedirs(new_root)
 
-    for key in new_point_clouds.keys():
-        point_cloud_and_metadata = {}
+    if count_metadata:
+        for key in new_point_clouds.keys():
+            point_cloud_and_metadata = {}
 
-        if label_offset is not None:
-            if key[1][0] == '0':
-                label_num = int(key[1][1]) + label_offset
-            else:
-                label_num = int(key[1]) + label_offset
-            
-            if label_num < 10:
-                new_label = '0' + str(label_num)
-            else:
-                new_label = str(label_num)
+            if label_offset is not None:
+                if key[1][0] == '0':
+                    label_num = int(key[1][1]) + label_offset
+                else:
+                    label_num = int(key[1]) + label_offset
+                
+                if label_num < 10:
+                    new_label = '0' + str(label_num)
+                else:
+                    new_label = str(label_num)
 
-            new_file_name = "label_" + key[0] + "_" + new_label + ".npz"
+                new_file_name = "label_" + key[0] + "_" + new_label + ".npz"
+            else:
+                new_file_name = "label_" + key[0] + "_" + key[1] + ".npz"
+
+            with open(os.path.join(new_root, new_file_name), 'wb') as new_file:
+                point_cloud_and_metadata["Point cloud"] = new_point_clouds[key]
+                if key in cycle_data.keys():
+                    point_cloud_and_metadata["Cycle data"] = cycle_data[key]
+                else:
+                    print("No cycle data for", key)
+                np.save(new_file, point_cloud_and_metadata)
+
+    else:
+        if os.path.isfile(os.path.join(new_root, "segment_boundaries.json")):
+            with open(os.path.join(new_root, "segment_boundaries.json"), 'r') as old_segmentation_file:
+                try:
+                    segments = json.load(old_segmentation_file)
+                except JSONDecodeError:
+                    segments = {}
         else:
-            new_file_name = "label_" + key[0] + "_" + key[1] + ".npz"
+            segments = {}
 
-        with open(os.path.join(new_root, new_file_name), 'wb') as new_file:
-            point_cloud_and_metadata["Point cloud"] = new_point_clouds[key]
-            if key in cycle_data.keys():
-                point_cloud_and_metadata["Cycle data"] = cycle_data[key]
+        with open(os.path.join(new_root, "segment_boundaries.json"), 'w') as segmentation_file:
+
+            for key in new_point_clouds.keys():
+                if not train:
+                    print(new_point_clouds[key].shape)
+                    bounds = run_segmentation_algorithm(new_point_clouds[key])
+                    print(key, bounds)
+
+                if label_offset is not None:
+                    if key[1][0] == '0':
+                        label_num = int(key[1][1]) + label_offset
+                    else:
+                        label_num = int(key[1]) + label_offset
+                    
+                    if label_num < 10:
+                        new_label = '0' + str(label_num)
+                    else:
+                        new_label = str(label_num)
+
+                    new_file_name = "label_" + key[0] + "_" + new_label + ".npy"
+
+                    if not train:
+                        if key[0] not in segments.keys():
+                            segments[key[0]] = {}
+                        segments[key[0]][new_label] = bounds
+
+                else:
+                    new_file_name = "label_" + key[0] + "_" + key[1] + ".npy"
+
+                    if not train:
+                        if key[0] not in segments.keys():
+                            segments[key[0]] = {}
+                        segments[key[0]][key[1]] = bounds
+
+                with open(os.path.join(new_root, new_file_name), 'wb') as new_file:
+                    np.save(new_file, new_point_clouds[key])
+
+            json.dump(segments, segmentation_file)
+                
+
+def run_segmentation_algorithm(cat_point_cloud_vid, grid_size=64):
+    def median_centering(point_cloud_vid):
+        all_points = np.concatenate(point_cloud_vid)
+        median_point = np.median(all_points[:,2:5], axis=0)
+        new_point_cloud_vid = []
+        for n, pc in enumerate(point_cloud_vid):
+            new_pc = np.copy(pc)
+            new_point_cloud_vid.append(new_pc)
+            new_point_cloud_vid[n][:,2:4] = new_pc[:,2:4] - median_point[:2]
+            
+        return new_point_cloud_vid, median_point
+
+    def find_boundaries(ssm_peak_matrix):
+        num_peaks = ssm_peak_matrix.shape[0]
+        assert ssm_peak_matrix.shape[1] == num_peaks
+        
+        peaks_in_order = np.argsort(np.diag(ssm_peak_matrix))[::-1]
+        
+        candidate_regions = []
+        
+        for peak in peaks_in_order:
+            
+            if len(candidate_regions) == 0:
+                candidate_regions.append([peak])
+                continue
+                
+            if peak < candidate_regions[0][0]:
+                if ssm_peak_matrix[peak, candidate_regions[0][0]] < 0.0:
+                    candidate_regions.insert(0, [peak])
+                else:
+                    candidate_regions[0].insert(0, peak)
+            elif peak > candidate_regions[-1][-1]:
+                if ssm_peak_matrix[peak, candidate_regions[-1][-1]] < 0.0:
+                    candidate_regions.append([peak])
+                else:
+                    candidate_regions[-1].append(peak)
             else:
-                print("No cycle data for", key)
-            np.save(new_file, point_cloud_and_metadata)
+                for ri in range(0, len(candidate_regions)):
+                    if ri != 0 and candidate_regions[ri-1][-1] < peak < candidate_regions[ri][0]:
+                        corr_peak_l = ssm_peak_matrix[peak, candidate_regions[ri-1][-1]]
+                        corr_peak_r = ssm_peak_matrix[peak, candidate_regions[ri][0]]
+                        
+                        if corr_peak_l < 0.0 and corr_peak_r < 0.0:
+                            candidate_regions.insert(ri, [peak])
+                        elif corr_peak_r > corr_peak_l:
+                            candidate_regions[ri].insert(0, peak)
+                        else:
+                            candidate_regions[ri-1].append(peak)
+                            
+                        break
+                    elif candidate_regions[ri][0] < peak < candidate_regions[ri][-1]:
+                        for wri in range(1, len(candidate_regions[ri])):
+                            if candidate_regions[ri][wri-1] < peak < candidate_regions[ri][wri]:
+                                corr_peak_l = ssm_peak_matrix[peak, candidate_regions[ri][wri-1]]
+                                corr_peak_r = ssm_peak_matrix[peak, candidate_regions[ri][wri]]
+                                
+                                new_region_l = candidate_regions[ri][:wri]
+                                new_region_r = candidate_regions[ri][wri:]
+                                
+                                if corr_peak_l < 0.0 and corr_peak_r < 0.0:
+                                    del candidate_regions[ri]
+                                    candidate_regions.insert(ri, new_region_r)
+                                    candidate_regions.insert(ri, [peak])
+                                    candidate_regions.insert(ri, new_region_l)
+                                elif corr_peak_r > 0.0 and corr_peak_l < 0.0:
+                                    del candidate_regions[ri][:wri]
+                                    candidate_regions[ri].insert(0, peak)
+                                    candidate_regions.insert(ri, new_region_l)
+                                elif corr_peak_r < 0.0 and corr_peak_l > 0.0:
+                                    del candidate_regions[ri][:wri]
+                                    candidate_regions.insert(ri, new_region_l)
+                                    candidate_regions[ri].append(peak)
+                                else:
+                                    candidate_regions[ri].insert(wri, peak)
+                                        
+                                break
+                        break
+        
+        num_regions = len(candidate_regions)
+        region_score = np.zeros((num_regions, num_regions))
+        
+        for i in range(num_regions):
+            region_r = ssm_peak_matrix[candidate_regions[i],:]
+            for j in range(num_regions):
+                region_rc = region_r[:,candidate_regions[j]]
+                region_score[i,j] = np.sum(region_rc)
+        
+        def best_boundaries(region_scores, current_index, phase, up_index=None, decay_factor=0.0):
+            if current_index == len(region_scores):
+                return 0, 1.0, []
+            
+            if phase == 1:
+                score1, dec1, f1 = best_boundaries(region_scores, current_index+1, -1, up_index=current_index)
+                score2, dec2, f2 = best_boundaries(region_scores, current_index+1, 1)
+                if score1 * dec1 > score2 * dec2:
+                    score = score1
+                    boundaries = f1
+                    multipler = dec1
+                else:
+                    score = score2
+                    boundaries = f2
+                    multipler = dec2
+            else:
+                score1, dec1, f1 = best_boundaries(region_scores, current_index+1, 1)
+                score2, dec2, f2 = best_boundaries(region_scores, current_index+1, -1, up_index=up_index)
+                if (score1 + region_scores[up_index, up_index] + region_scores[current_index, current_index] - 2*region_scores[up_index, current_index]) * dec1 * (1 - decay_factor) > score2 * dec2:
+                    score = score1 + region_scores[up_index, up_index] + region_scores[current_index, current_index] - 2*region_scores[up_index, current_index]
+                    boundaries = f1 + [[up_index, current_index]]
+                    multipler = dec1 * (1 - decay_factor)
+                else:
+                    score = score2
+                    boundaries = f2
+                    multipler = dec2
+                    
+            return score, multipler, boundaries
+        
+        _, _, rn_boundaries = best_boundaries(region_score, 0, 1)
+        
+        peak_boundaries = []
+        
+        if len(rn_boundaries) == 0:
+            peak_boundaries += [[0, num_peaks-1]]
+        else:
+            for rnb in rn_boundaries[::-1]:
+                peak_boundaries += [[candidate_regions[rnb[0]][0], candidate_regions[rnb[1]][-1]]]
+            
+        return peak_boundaries
+
+    point_cloud_vid = []
+    for frame_n in range(int(np.amax(cat_point_cloud_vid[:,0])+1)):
+        point_cloud_vid.append(cat_point_cloud_vid[cat_point_cloud_vid[:,0] == frame_n,:])
+
+    vid_len = len(point_cloud_vid)
+    print(vid_len)
+    new_point_cloud_vid, median_point = median_centering(point_cloud_vid)
+    dim_min, dim_max = -1.2, 1.2 - 2.4/grid_size
+    xi, yi, zi = np.meshgrid(np.linspace(dim_min, dim_max, grid_size), np.linspace(dim_min, dim_max, grid_size), np.linspace(dim_min, dim_max, grid_size))
+    doppler_vals_over_time = []
+    for pc in new_point_cloud_vid:
+        doppler_vals = griddata(pc[:,2:5], pc[:,5], (xi, yi, zi), method='linear', fill_value=0.0)
+        doppler_vals_over_time.append(doppler_vals)
+    doppler_vals_over_time = np.array(doppler_vals_over_time)
+
+    ssm_save = np.zeros((vid_len, vid_len))
+    dv_txy = np.mean(doppler_vals_over_time, axis=3)
+    dv_txz = np.mean(doppler_vals_over_time, axis=2)
+    dv_tyz = np.mean(doppler_vals_over_time, axis=1)
+    for i in range(vid_len):
+        for j in range(vid_len):
+            xy_correlation = np.mean(np.multiply(dv_txy[i,:,:], dv_txy[j,:,:]))
+            xz_correlation = np.mean(np.multiply(dv_txz[i,:,:], dv_txz[j,:,:]))
+            yz_correlation = np.mean(np.multiply(dv_tyz[i,:,:], dv_tyz[j,:,:]))
+            
+            ssm_save[i,j] = xy_correlation + xz_correlation + yz_correlation
+            
+    ssm_diag = np.diag(ssm_save)
+    ssm_diag_peaks, _ = sp.signal.find_peaks(ssm_diag)
+    if len(ssm_diag_peaks) > 0:
+        ssm_peak_matrix = np.diag(ssm_diag[ssm_diag_peaks])
+        for r in range(ssm_peak_matrix.shape[0]):
+            for c in range(ssm_peak_matrix.shape[1]):
+                ssm_peak_matrix[r,c] = ssm_save[ssm_diag_peaks[r], ssm_diag_peaks[c]]
+
+        bounds = find_boundaries(ssm_peak_matrix)
+        print(bounds)
+        print("Segmentation finished")
+
+        final_bounds = []
+
+        for i in range(len(bounds)):
+            bound_l, bound_r = bounds[i]
+            if bound_l == 0:
+                sbl = (ssm_diag_peaks[bound_l]) // 2
+            else:
+                sbl = (ssm_diag_peaks[bound_l] + ssm_diag_peaks[bound_l-1]) // 2 + 1
+
+            if bound_r == len(ssm_diag_peaks) - 1:
+                sbr = (ssm_diag_peaks[bound_r] + vid_len) // 2
+            else:
+                sbr = (ssm_diag_peaks[bound_r] + ssm_diag_peaks[bound_r+1]) // 2
+
+            region_in_bounds_order = np.argsort(np.diag(ssm_save)[sbl:sbr+1])[::-1]
+            region_in_bounds_order += sbl
+            region_in_bounds_order = region_in_bounds_order.tolist()
+
+            final_bounds += [(int(sbl), int(sbr), region_in_bounds_order)]
+
+    else:
+        print("No peaks were large enough, so terminating")
+
+        region_in_bounds_order = np.argsort(np.diag(ssm_save))[::-1]
+        region_in_bounds_order = region_in_bounds_order.tolist()
+
+        final_bounds = [(int(0), int(vid_len-1), region_in_bounds_order)]
+
+    return final_bounds
 
 if __name__ == "__main__":
     base_folder = '/home/alan/Documents/radar-nn-model/data/radar'
@@ -147,12 +402,13 @@ if __name__ == "__main__":
     # process_radar_data(root=os.path.join(base_folder, 'set8_240'), eps=0.06, min_samples=5, train=False, radars=[0], label_offset=9)  # 28-30
     # process_radar_data(root=os.path.join(base_folder, 'set8_240'), eps=0.06, min_samples=5, train=False, radars=[1], label_offset=12) # 31-33
     # process_radar_data(root=os.path.join(base_folder, 'set8_240'), eps=0.06, min_samples=5, train=False, radars=[2], label_offset=15) # 34-36
-    process_radar_data(root=os.path.join(base_folder, 'set8_120'), eps=0.06, min_samples=5, train=False, radars=[0], label_offset=18) # 19-21
-    process_radar_data(root=os.path.join(base_folder, 'set8_120'), eps=0.06, min_samples=5, train=False, radars=[1], label_offset=21) # 22-24
-    process_radar_data(root=os.path.join(base_folder, 'set8_120'), eps=0.06, min_samples=5, train=False, radars=[2], label_offset=24) # 25-27
+    # process_radar_data(root=os.path.join(base_folder, 'set8_120'), eps=0.06, min_samples=5, train=False, radars=[0], label_offset=18) # 19-21
+    # process_radar_data(root=os.path.join(base_folder, 'set8_120'), eps=0.06, min_samples=5, train=False, radars=[1], label_offset=21) # 22-24
+    # process_radar_data(root=os.path.join(base_folder, 'set8_120'), eps=0.06, min_samples=5, train=False, radars=[2], label_offset=24) # 25-27
     # process_radar_data(root=os.path.join(base_folder, 'set8_300'), eps=0.06, min_samples=5, train=False, radars=[0], label_offset=27) # 28-30
     # process_radar_data(root=os.path.join(base_folder, 'set8_300'), eps=0.06, min_samples=5, train=False, radars=[1], label_offset=30) # 31-33
     # process_radar_data(root=os.path.join(base_folder, 'set8_300'), eps=0.06, min_samples=5, train=False, radars=[2], label_offset=33) # 34-36
     # process_radar_data(root=os.path.join(base_folder, 'set8_180'), eps=0.06, min_samples=5, train=False, radars=[0], label_offset=36) # 28-30
     # process_radar_data(root=os.path.join(base_folder, 'set8_180'), eps=0.06, min_samples=5, train=False, radars=[1], label_offset=39) # 31-33
     # process_radar_data(root=os.path.join(base_folder, 'set8_180'), eps=0.06, min_samples=5, train=False, radars=[2], label_offset=42) # 34-36
+    process_radar_data(root=os.path.join(base_folder, 'set9_0'), eps=0.06, min_samples=5, train=False, radars=[0])                # 19-21

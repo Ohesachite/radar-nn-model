@@ -28,7 +28,7 @@ def train_one_epoch(model, criterion, optimizer, lr_scheduler, data_loader, devi
     header = 'Epoch: [{}]'.format(epoch)
     for clip, features, target, _, _, _ in metric_logger.log_every(data_loader, print_freq, header):
         start_time = time.time()
-        clip, target = clip.to(device), target.to(device)
+        clip, features, target = clip.to(device), features.to(device), target.to(device)
         output = model(clip, features)
         loss = criterion(output, target)
 
@@ -48,18 +48,22 @@ def train_one_epoch(model, criterion, optimizer, lr_scheduler, data_loader, devi
 def evaluate(model, criterion, data_loader, device):
     model.eval()
     metric_logger = utils.MetricLogger(delimiter="  ")
+    confusion = utils.ConfusionMatrix(10, device)
     header = 'Test:'
     video_prob = {}
     video_label = {}
     with torch.no_grad():
         for clip, features, target, video_idx, _, _ in metric_logger.log_every(data_loader, 100, header):
             clip = clip.to(device, non_blocking=True)
+            features = features.to(device, non_blocking=True)
             target = target.to(device, non_blocking=True)
             output = model(clip, features)
             loss = criterion(output, target)
 
             acc1, acc5 = utils.accuracy(output, target, topk=(1, 5))
             prob = F.softmax(input=output, dim=1)
+
+            confusion.add_accuracy_by_class(target, output)
 
             # FIXME need to take into account that the datasets
             # could have been padded in distributed setup
@@ -81,6 +85,12 @@ def evaluate(model, criterion, data_loader, device):
     metric_logger.synchronize_between_processes()
 
     print(' * Clip Acc@1 {top1.global_avg:.3f} Clip Acc@5 {top5.global_avg:.3f}'.format(top1=metric_logger.acc1, top5=metric_logger.acc5))
+
+    confusion_matrix = confusion.get_confusion_matrix().cpu().numpy()
+
+    print('Confusion Matrix:')
+    with np.printoptions(precision=3):
+        print(confusion_matrix)
 
     # video level prediction
     video_pred = {k: np.argmax(v) for k, v in video_prob.items()}
@@ -196,10 +206,7 @@ def main(args):
                 'args': args}
             utils.save_on_master(
                 checkpoint,
-                os.path.join(output_dir, 'model_{}.pth'.format(epoch)))
-            utils.save_on_master(
-                checkpoint,
-                os.path.join(output_dir, 'checkpoint.pth'))
+                os.path.join(args.output_dir, 'p41r_ckpt_{}.pth'.format(epoch)))
 
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
@@ -211,8 +218,8 @@ def parse_args():
     import argparse
     parser = argparse.ArgumentParser(description='P4Transformer Model Training')
 
-    parser.add_argument('--train-path', default='/workspace/radar-nn-model/data/radar/train', type=str, help='training dataset')
-    parser.add_argument('--test-path', default='/workspace/radar-nn-model/data/radar/test', type=str, help='testing dataset')
+    parser.add_argument('--train-path', default='/home/alan/Documents/radar-nn-model/data/radar/train', type=str, help='training dataset')
+    parser.add_argument('--test-path', default='/home/alan/Documents/radar-nn-model/data/radar/test_1r', type=str, help='testing dataset')
     parser.add_argument('--seed', default=0, type=int, help='random seed')
     parser.add_argument('--model', default='P4Transformer', type=str, help='model')
     # input
@@ -234,7 +241,7 @@ def parse_args():
     parser.add_argument('--dim-head', default=128, type=int, help='transformer dim for each head')
     parser.add_argument('--mlp-dim', default=2048, type=int, help='transformer mlp dim')
     # training
-    parser.add_argument('-b', '--batch-size', default=10, type=int)
+    parser.add_argument('-b', '--batch-size', default=20, type=int)
     parser.add_argument('--epochs', default=50, type=int, metavar='N', help='number of total epochs to run')
     parser.add_argument('-j', '--workers', default=16, type=int, metavar='N', help='number of data loading workers (default: 16)')
     parser.add_argument('--lr', default=0.01, type=float, help='initial learning rate')

@@ -159,6 +159,22 @@ class MetricLogger(object):
         total_time_str = str(datetime.timedelta(seconds=int(total_time)))
         print('{} Total time: {}'.format(header, total_time_str))
 
+class ConfusionMatrix(object):
+    def __init__(self, num_classes, device):
+        self.class_totals = torch.zeros(num_classes, device=device)
+        self.class_counts = torch.zeros(num_classes, num_classes, device=device)
+        self.bin_length = num_classes
+
+    def add_accuracy_by_class(self, target, output):
+        target = target.long()
+        _, pred = output.topk(1,1)
+        pred = pred.long()
+        self.class_totals += torch.bincount(target, minlength=self.bin_length)
+        for index in zip(pred, target):
+            self.class_counts[index] += 1
+
+    def get_confusion_matrix(self):
+        return torch.div(self.class_counts, self.class_totals)
 
 def accuracy(output, target, topk=(1,)):
     """Computes the accuracy over the k top predictions for the specified values of k"""

@@ -105,18 +105,22 @@ def validate(model, criterion, data_loader, device, epoch, print_freq, contrasti
 def evaluate(model, criterion, data_loader, device, result_file=None):
     model.eval()
     metric_logger = utils.MetricLogger(delimiter="  ")
+    confusion = utils.ConfusionMatrix(10, device)
     header = 'Test:'
     video_prob = {}
     video_label = {}
     with torch.no_grad():
         for clip, features, target, video_idx, _, _ in metric_logger.log_every(data_loader, 100, header):
             clip = clip.to(device, non_blocking=True)
+            features = features.to(device, non_blocking=True)
             target = target.to(device, non_blocking=True)
             output, _, _ = model(clip, features)
             loss = criterion(output, target)
 
             acc1, acc3 = utils.accuracy(output, target, topk=(1, 3))
             prob = F.softmax(input=output, dim=1)
+
+            confusion.add_accuracy_by_class(target, output)
 
             # FIXME need to take into account that the datasets
             # could have been padded in distributed setup
@@ -138,6 +142,12 @@ def evaluate(model, criterion, data_loader, device, result_file=None):
     metric_logger.synchronize_between_processes()
 
     print(' * Clip Acc@1 {top1.global_avg:.3f} Clip Acc@3 {top3.global_avg:.3f}'.format(top1=metric_logger.acc1, top3=metric_logger.acc3))
+
+    confusion_matrix = confusion.get_confusion_matrix().cpu().numpy()
+
+    print('Confusion Matrix:')
+    with np.printoptions(precision=3):
+        print(confusion_matrix)
 
     if result_file is not None:
         result_file.write('Test Acc {acc.global_avg:.3f} Test Loss {t_loss.global_avg:.3f} '.format(acc=metric_logger.acc1, t_loss=metric_logger.loss))
@@ -204,7 +214,8 @@ def main(args):
             frames_per_clip=args.clip_len,
             frame_interval=args.frame_interval,
             num_points=args.num_points,
-            mask_split=[0.0, 0.0, 1.0]
+            mask_split=[0.0, 0.0, 1.0],
+            mode=3
     )
 
     print("Creating data loaders")
@@ -222,25 +233,30 @@ def main(args):
     data_loader_test = torch.utils.data.DataLoader(dataset_test, batch_size=args.batch_size, num_workers=args.workers, pin_memory=True)
 
     print("Creating model")
-    Model = getattr(Models, args.model)
-    model = Model(radius=args.radius, nsamples=args.nsamples, spatial_stride=args.spatial_stride,
-                  temporal_kernel_size=args.temporal_kernel_size, temporal_stride=args.temporal_stride,
-                  emb_relu=args.emb_relu,
-                  dim=args.dim, depth=args.depth, heads=args.heads, dim_head=args.dim_head,
-                  mlp_dim=args.mlp_dim, num_classes=dataset.num_classes)
+    model = Models.RadarP4Transformer(radius=args.radius, nsamples=args.nsamples, spatial_stride=args.spatial_stride,
+                                    temporal_kernel_size=args.temporal_kernel_size, temporal_stride=args.temporal_stride,
+                                    emb_relu=args.emb_relu,
+                                    dim=args.dim, depth=args.depth, heads=args.heads, dim_head=args.dim_head,
+                                    mlp_dim=args.mlp_dim, num_classes=dataset.num_classes)
 
     if torch.cuda.device_count() > 1:
         model = nn.DataParallel(model)
-    model.to(device)
+    model = model.to(device)
 
     criterion = nn.CrossEntropyLoss()
 
     lr = args.lr
     optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=args.momentum, weight_decay=args.weight_decay)
-    contrastive_optimizer = torch.optim.Adagrad([
-        {'params': model.module.tube_embedding.parameters()}, 
-        {'params': model.module.pos_embedding.parameters()}
-        ], lr=lr, weight_decay=args.weight_decay)
+    if torch.cuda.device_count() > 1:
+        contrastive_optimizer = torch.optim.Adagrad([
+            {'params': model.module.tube_embedding.parameters()}, 
+            {'params': model.module.pos_embedding.parameters()}
+            ], lr=lr, weight_decay=args.weight_decay)
+    else:
+        contrastive_optimizer = torch.optim.Adagrad([
+            {'params': model.tube_embedding.parameters()}, 
+            {'params': model.pos_embedding.parameters()}
+            ], lr=lr, weight_decay=args.weight_decay)
 
     # convert scheduler to be per iteration, not per epoch, for warmup that lasts
     # between different epochs
@@ -248,11 +264,10 @@ def main(args):
     lr_milestones = [len(data_loader_train) * m for m in args.lr_milestones]
     lr_scheduler = WarmupMultiStepLR(optimizer, milestones=lr_milestones, gamma=args.lr_gamma, warmup_iters=warmup_iters, warmup_factor=1e-5)
 
-    model_without_ddp = model
-
     if args.resume:
+        print("Loading checkpoint")
         checkpoint = torch.load(args.resume, map_location='cpu')
-        model_without_ddp.load_state_dict(checkpoint['model'])
+        model.load_state_dict(checkpoint['model'])
         optimizer.load_state_dict(checkpoint['optimizer'])
         lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
         args.start_epoch = checkpoint['epoch'] + 1
@@ -277,17 +292,14 @@ def main(args):
 
         if args.output_dir:
             checkpoint = {
-                'model': model_without_ddp.state_dict(),
+                'model': model.state_dict(),
                 'optimizer': optimizer.state_dict(),
                 'lr_scheduler': lr_scheduler.state_dict(),
                 'epoch': epoch,
                 'args': args}
             utils.save_on_master(
                 checkpoint,
-                os.path.join(output_dir, 'model_{}.pth'.format(epoch)))
-            utils.save_on_master(
-                checkpoint,
-                os.path.join(output_dir, 'checkpoint.pth'))
+                os.path.join(args.output_dir, 'pose_ckpt_{}.pth'.format(epoch)))
 
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
@@ -303,10 +315,9 @@ def parse_args():
     import argparse
     parser = argparse.ArgumentParser(description='P4Transformer Model Training')
 
-    parser.add_argument('--train-path', default='/home/alan/Documents/radar-nn-model/data/radar/train', type=str, help='training dataset')
+    parser.add_argument('--train-path', default='/home/alan/Documents/radar-nn-model/data/radar/train_save', type=str, help='training dataset')
     parser.add_argument('--test-path', default='/home/alan/Documents/radar-nn-model/data/radar/test', type=str, help='testing dataset')
     parser.add_argument('--seed', default=0, type=int, help='random seed')
-    parser.add_argument('--model', default='RadarP4Transformer', type=str, help='model')
     # input
     parser.add_argument('--clip-len', default=24, type=int, metavar='N', help='number of frames per clip')
     parser.add_argument('--frame-interval', default=1, type=int, metavar='N', help='interval of sampled frames')

@@ -44,6 +44,13 @@ class Radar(Dataset):
             metadata_file.close()
             positive_file = True
 
+        segment_file = False
+        if os.path.exists(os.path.join(root, "segment_boundaries.json")):
+            boundary_file = open(os.path.join(root, "segment_boundaries.json"))
+            boundaries = json.load(boundary_file)
+            boundary_file.close()
+            segment_file = True
+
         vid_index_num_map = {}
         vid_num_index_map = {}
 
@@ -59,19 +66,47 @@ class Radar(Dataset):
                     vid_index_num_map[(index, label_key[name_parts[1]])] = name_parts[2]
                     vid_num_index_map[(name_parts[2], label_key[name_parts[1]])] = index
 
-                    nframes = int(np.amax(point_clouds[(name_parts[1], name_parts[2])][:,0])) + 1
-                    for t in range(0, nframes-frame_interval*(frames_per_clip-1)):
-                        self.index_map.append((index, t))
-                        if t < (nframes-frame_interval*(frames_per_clip-1)) * mask_split[0]:
-                            self.train_indices.append(idx)
-                        elif t < (nframes-frame_interval*(frames_per_clip-1)) * (mask_split[0] + mask_split[1]):
-                            self.val_indices.append(idx)
-                        else:
-                            self.test_indices.append(idx)
-                        idx += 1
+                    if mode == 0:
+                        nframes = int(np.amax(point_clouds[(name_parts[1], name_parts[2])][:,0])) + 1
+                        for t in range(0, nframes-frame_interval*(frames_per_clip-1)):
+                            self.index_map.append((index, t))
+                            if t < (nframes-frame_interval*(frames_per_clip-1)) * mask_split[0]:
+                                self.train_indices.append(idx)
+                            elif t < (nframes-frame_interval*(frames_per_clip-1)) * (mask_split[0] + mask_split[1]):
+                                self.val_indices.append(idx)
+                            else:
+                                self.test_indices.append(idx)
+                            idx += 1
 
-                    if mode != 0:
-                        print("You need cycle data for mode 1 or 2. This would normally be found in npz files rather than npy")
+                    elif mode == 3:
+                        if segment_file:
+                            # boundaries[(name_parts[1], name_parts[2])] should be list of tuples (start, end, list with indices sorted in order of largest self correlation)
+                            for start, end, order in boundaries[name_parts[1]][name_parts[2]]:
+                                if end - start + 1 < frames_per_clip:
+                                    chosen_frames = []
+                                    nframes = frames_per_clip
+                                    while end - start + 1 < nframes:
+                                        chosen_frames += order
+                                        nframes -= end - start + 1
+                                    chosen_frames += order[:nframes]
+                                    chosen_frames.sort()
+                                else:
+                                    order.remove(start)
+                                    order.remove(end)
+                                    chosen_frames = order[:frames_per_clip-2]
+                                    chosen_frames.sort()
+                                    chosen_frames.insert(0, start)
+                                    chosen_frames.append(end)
+                                
+                                self.index_map.append((index, chosen_frames))
+                                self.test_indices.append(idx)
+                                idx += 1
+
+                        else:
+                            raise ValueError("A file named segment_boundaries.json is required for mode 3 to work")
+
+                    else:
+                        raise ValueError("You need cycle data for mode 1 or 2. This would normally be found in npz files rather than npy")
 
                     index += 1
 
@@ -130,6 +165,32 @@ class Radar(Dataset):
 
                                 final_indices = indices[:init_start_frame] + repeat_indices + indices[init_end_frame:]
                                 self.index_map.append((index, (init_count + c) * f * r, final_indices))
+                    elif mode == 3:
+                        if segment_file:
+                            # boundaries[(name_parts[1], name_parts[2])] should be list of tuples (start, end, list with indices sorted in order of largest self correlation)
+                            for start, end, order in boundaries[name_parts[1]][name_parts[2]]:
+                                if end - start + 1 < frames_per_clip:
+                                    chosen_frames = []
+                                    nframes = frames_per_clip
+                                    while end - start + 1 < nframes:
+                                        chosen_frames += order
+                                        nframes -= end - start + 1
+                                    chosen_frames += order[:nframes]
+                                    chosen_frames.sort()
+                                else:
+                                    order.remove(start)
+                                    order.remove(end)
+                                    chosen_frames = order[:frames_per_clip-2]
+                                    chosen_frames.sort()
+                                    chosen_frames.insert(0, start)
+                                    chosen_frames.append(end)
+                                
+                                self.index_map.append((index, chosen_frames))
+                                self.test_indices.append(idx)
+                                idx += 1
+
+                        else:
+                            raise ValueError("A file named segment_boundaries.json is required for mode 3 to work")
 
                     index += 1
 
@@ -270,7 +331,43 @@ class Radar(Dataset):
             y1, y2, avg_period, optimal_stride = self.get_repetition_counting_target(n_frames, self.frames_per_clip, start_frame, end_frame, count)
 
             return vid_points.astype(np.float32), vid_features.astype(np.float32), (y1.astype(np.float32), y2.astype(np.float32), avg_period, optimal_stride, count)
+        
+        elif self.mode == 3:
+            index, indices = self.index_map[idx]
+            video = self.videos[index]
+            label = self.labels[index]
+    
+            clip = []
+            for i in indices:
+                frame = video[video[:,0] == i, 2:]
+                clip.append(frame)
 
+            for i, p in enumerate(clip):
+                if p.shape[0] > self.num_points:
+                    r = np.random.choice(p.shape[0], size=self.num_points, replace=False)
+                else:
+                    repeat, residue = self.num_points // p.shape[0], self.num_points % p.shape[0]
+                    r = np.random.choice(p.shape[0], size=residue, replace=False)
+                    r = np.concatenate([np.arange(p.shape[0]) for _ in range(repeat)] + [r], axis=0)
+                clip[i] = p[r, :]
+
+            clip = np.array(clip)
+
+            clip_points = clip[:,:,:3]
+            clip_features = clip[:,:,3:]
+            clip_features = np.swapaxes(clip_features, 1, 2)
+
+            if idx in self.train_indices:
+                # scale height and translate body
+                scale = np.random.uniform(0.9, 1.1, size=1)
+                offset = np.random.uniform(-0.5, 0.5, size=2)
+                clip_points[:,:,2] = clip_points[:,:,2] * scale
+                clip_points[:,:,:2] = clip_points[:,:,:2] + offset
+
+            positive_clip_points, positive_clip_features = self.generate_positive_sample(clip_points, clip_features, idx)
+
+            return clip_points.astype(np.float32), clip_features.astype(np.float32), label, index, positive_clip_points.astype(np.float32), positive_clip_features.astype(np.float32)
+        
         else:
             assert(False, "Invalid mode")
 
@@ -367,7 +464,7 @@ class Radar(Dataset):
             return y1, y2, 1.0, 1
                         
 if __name__ == '__main__':
-    dataset = Radar(root='/home/alan/Documents/radar-nn-model/data/radar/train', mode=2, frames_per_clip=64)
-    print(len(dataset))
-    for clip_points, clip_features, targets in dataset:
-        print(targets[0].shape, targets[1].shape, targets[2], targets[3], targets[4])
+    dataset = Radar(root='/home/alan/Documents/radar-nn-model/data/radar/test', mode=3, frames_per_clip=24, num_points=1024)
+    for vid, points, label, index, _, _ in dataset:
+        print(vid.shape, points.shape, label, index)
+    
