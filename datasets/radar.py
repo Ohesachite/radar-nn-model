@@ -12,6 +12,7 @@ class Radar(Dataset):
         super(Radar, self).__init__()
 
         self.videos = []
+        self.num_samples = []
         self.generate_positive = {}
         self.labels = []
         self.cycle_data = []
@@ -61,13 +62,14 @@ class Radar(Dataset):
                 if name_parts[0] == "label":
                     point_clouds[(name_parts[1], name_parts[2])] = np.load(os.path.join(root, file_name))
                     self.videos.append(point_clouds[(name_parts[1], name_parts[2])])
+                    self.num_samples.append(0)
                     self.labels.append(label_key[name_parts[1]])
 
                     vid_index_num_map[(index, label_key[name_parts[1]])] = name_parts[2]
                     vid_num_index_map[(name_parts[2], label_key[name_parts[1]])] = index
 
+                    nframes = int(np.amax(point_clouds[(name_parts[1], name_parts[2])][:,0])) + 1
                     if mode == 0:
-                        nframes = int(np.amax(point_clouds[(name_parts[1], name_parts[2])][:,0])) + 1
                         for t in range(0, nframes-frame_interval*(frames_per_clip-1)):
                             self.index_map.append((index, t))
                             if t < (nframes-frame_interval*(frames_per_clip-1)) * mask_split[0]:
@@ -76,34 +78,92 @@ class Radar(Dataset):
                                 self.val_indices.append(idx)
                             else:
                                 self.test_indices.append(idx)
+                            self.num_samples[index] += 1
                             idx += 1
 
-                    elif mode == 3:
+                    elif mode == 3 or mode == 5 or mode == 6:
                         if segment_file:
                             # boundaries[(name_parts[1], name_parts[2])] should be list of tuples (start, end, list with indices sorted in order of largest self correlation)
+                            seg_num = 0
                             for start, end, order in boundaries[name_parts[1]][name_parts[2]]:
                                 if end - start + 1 < frames_per_clip:
-                                    chosen_frames = []
-                                    nframes = frames_per_clip
-                                    while end - start + 1 < nframes:
-                                        chosen_frames += order
-                                        nframes -= end - start + 1
-                                    chosen_frames += order[:nframes]
-                                    chosen_frames.sort()
+                                    if mode == 3 or mode == 5:
+                                        chosen_frames = []
+                                        nframes = frames_per_clip
+                                        while end - start + 1 < nframes:
+                                            chosen_frames += order
+                                            nframes -= end - start + 1
+                                        chosen_frames += order[:nframes]
+                                        chosen_frames.sort()
+                                    
+                                        self.index_map.append((index, chosen_frames, seg_num))
+                                        self.train_indices.append(idx)
+                                        self.test_indices.append(idx)
+                                        idx += 1
+                                    elif mode == 6:
+                                        randstart = np.random.randint(max(0, end-(frames_per_clip-1)), min(start+1, nframes-(frames_per_clip-1)))
+                                        self.index_map.append((index, list(range(randstart, randstart+frames_per_clip)), seg_num))
+                                        self.train_indices.append(idx)
+                                        self.test_indices.append(idx)
+                                        idx += 1
                                 else:
-                                    order.remove(start)
-                                    order.remove(end)
-                                    chosen_frames = order[:frames_per_clip-2]
-                                    chosen_frames.sort()
-                                    chosen_frames.insert(0, start)
-                                    chosen_frames.append(end)
-                                
-                                self.index_map.append((index, chosen_frames))
-                                self.test_indices.append(idx)
-                                idx += 1
+                                    if mode == 3:
+                                        num_sects = (end - start + 1) // frames_per_clip + 1
+                                        for i in range(num_sects):
+                                            sect_start = start + (end - start + 1) * i // num_sects
+                                            sect_end = start + (end - start + 1) * (i+1) // num_sects
+                                            sect_order = [x for x in order if sect_start <= x < sect_end]
+                                            chosen_frames = []
+                                            nframes = frames_per_clip
+                                            while sect_end - sect_start < nframes:
+                                                chosen_frames += sect_order
+                                                nframes -= sect_end - sect_start
+                                            chosen_frames += sect_order[:nframes]
+                                            chosen_frames.sort()
+
+                                            self.index_map.append((index, chosen_frames, seg_num))
+                                            self.train_indices.append(idx)
+                                            self.test_indices.append(idx)
+                                            idx += 1
+                                    elif mode == 5:
+                                        order.remove(start)
+                                        order.remove(end)
+                                        chosen_frames = order[:frames_per_clip-2]
+                                        chosen_frames.sort()
+                                        chosen_frames.insert(0, start)
+                                        chosen_frames.append(end)
+
+                                        self.index_map.append((index, chosen_frames, seg_num))
+                                        self.train_indices.append(idx)
+                                        self.test_indices.append(idx)
+                                        idx += 1
+                                    elif mode == 6:
+                                        for t in range((end + 1 - start) - frame_interval*(frames_per_clip-1)):
+                                            self.index_map.append((index, list(range(t, t+frames_per_clip)), seg_num))
+                                            self.train_indices.append(idx)
+                                            self.test_indices.append(idx)
+                                            idx += 1
+
+                                    else:
+                                        raise ValueError("We shouldn't have arrived here")
+
+                                self.num_samples[index] += 1
+                                seg_num += 1
 
                         else:
                             raise ValueError("A file named segment_boundaries.json is required for mode 3 to work")
+                    elif mode == 4:
+                        nframes = int(np.amax(point_clouds[(name_parts[1], name_parts[2])][:,0])) + 1
+                        for t in range(0, nframes-frame_interval*(frames_per_clip-1), frame_interval*frames_per_clip):
+                            self.index_map.append((index, t))
+                            if t < (nframes-frame_interval*(frames_per_clip-1)) * mask_split[0]:
+                                self.train_indices.append(idx)
+                            elif t < (nframes-frame_interval*(frames_per_clip-1)) * (mask_split[0] + mask_split[1]):
+                                self.val_indices.append(idx)
+                            else:
+                                self.test_indices.append(idx)
+                            self.num_samples[index] += 1
+                            idx += 1
 
                     else:
                         raise ValueError("You need cycle data for mode 1 or 2. This would normally be found in npz files rather than npy")
@@ -116,6 +176,7 @@ class Radar(Dataset):
                     loaded_data = np.load(os.path.join(root, file_name), allow_pickle=True).item()
                     point_clouds[(name_parts[1], name_parts[2])] = loaded_data['Point cloud']
                     self.videos.append(point_clouds[(name_parts[1], name_parts[2])])
+                    self.num_samples.append(0)
                     self.labels.append(label_key[name_parts[1]])
 
                     vid_index_num_map[(index, label_key[name_parts[1]])] = name_parts[2]
@@ -136,7 +197,9 @@ class Radar(Dataset):
                                 self.val_indices.append(idx)
                             else:
                                 self.test_indices.append(idx)
+                            self.num_samples[index] += 1
                             idx += 1
+                            
                     elif mode == 2: # No index mapping for mode 1 supported, mode 2 produces synthetically generated data
                         # f - frame skips, c - count padding, r - number of repeats
                         skips = [(f, c, r) for f in [1,2] for c in [0,-1,1] for r in [1,2,3]]
@@ -165,32 +228,92 @@ class Radar(Dataset):
 
                                 final_indices = indices[:init_start_frame] + repeat_indices + indices[init_end_frame:]
                                 self.index_map.append((index, (init_count + c) * f * r, final_indices))
-                    elif mode == 3:
+
+                    elif mode == 3 or mode == 5 or mode == 6:
                         if segment_file:
                             # boundaries[(name_parts[1], name_parts[2])] should be list of tuples (start, end, list with indices sorted in order of largest self correlation)
+                            seg_num = 0
                             for start, end, order in boundaries[name_parts[1]][name_parts[2]]:
                                 if end - start + 1 < frames_per_clip:
-                                    chosen_frames = []
-                                    nframes = frames_per_clip
-                                    while end - start + 1 < nframes:
-                                        chosen_frames += order
-                                        nframes -= end - start + 1
-                                    chosen_frames += order[:nframes]
-                                    chosen_frames.sort()
+                                    if mode == 3 or mode == 5:
+                                        chosen_frames = []
+                                        nframes = frames_per_clip
+                                        while end - start + 1 < nframes:
+                                            chosen_frames += order
+                                            nframes -= end - start + 1
+                                        chosen_frames += order[:nframes]
+                                        chosen_frames.sort()
+                                    
+                                        self.index_map.append((index, chosen_frames, seg_num))
+                                        self.train_indices.append(idx)
+                                        self.test_indices.append(idx)
+                                        idx += 1
+                                    elif mode == 6:
+                                        randstart = np.random.randint(max(0, end-(frames_per_clip-1)), min(start+1, nframes-(frames_per_clip-1)))
+                                        self.index_map.append((index, list(range(randstart, randstart+frames_per_clip)), seg_num))
+                                        self.train_indices.append(idx)
+                                        self.test_indices.append(idx)
+                                        idx += 1
                                 else:
-                                    order.remove(start)
-                                    order.remove(end)
-                                    chosen_frames = order[:frames_per_clip-2]
-                                    chosen_frames.sort()
-                                    chosen_frames.insert(0, start)
-                                    chosen_frames.append(end)
-                                
-                                self.index_map.append((index, chosen_frames))
-                                self.test_indices.append(idx)
-                                idx += 1
+                                    if mode == 3:
+                                        num_sects = (end - start + 1) // frames_per_clip + 1
+                                        for i in range(num_sects):
+                                            sect_start = start + (end - start + 1) * i // num_sects
+                                            sect_end = start + (end - start + 1) * (i+1) // num_sects
+                                            sect_order = [x for x in order if sect_start <= x < sect_end]
+                                            chosen_frames = []
+                                            nframes = frames_per_clip
+                                            while sect_end - sect_start < nframes:
+                                                chosen_frames += sect_order
+                                                nframes -= sect_end - sect_start
+                                            chosen_frames += sect_order[:nframes]
+                                            chosen_frames.sort()
+
+                                            self.index_map.append((index, chosen_frames, seg_num))
+                                            self.train_indices.append(idx)
+                                            self.test_indices.append(idx)
+                                            idx += 1
+                                    elif mode == 5:
+                                        order.remove(start)
+                                        order.remove(end)
+                                        chosen_frames = order[:frames_per_clip-2]
+                                        chosen_frames.sort()
+                                        chosen_frames.insert(0, start)
+                                        chosen_frames.append(end)
+                                        
+                                        self.index_map.append((index, chosen_frames, seg_num))
+                                        self.train_indices.append(idx)
+                                        self.test_indices.append(idx)
+                                        idx += 1
+                                    elif mode == 6:
+                                        for t in range((end + 1 - start) - frame_interval*(frames_per_clip-1)):
+                                            self.index_map.append((index, list(range(t, t+frames_per_clip)), seg_num))
+                                            self.train_indices.append(idx)
+                                            self.test_indices.append(idx)
+                                            idx += 1
+
+                                    else:
+                                        raise ValueError("We shouldn't have arrived here")
+
+                                self.num_samples[index] += 1
+                                seg_num += 1
 
                         else:
                             raise ValueError("A file named segment_boundaries.json is required for mode 3 to work")
+
+                    elif mode == 4:
+                        nframes = int(np.amax(point_clouds[(name_parts[1], name_parts[2])][:,0])) + 1
+                        for t in range(0, nframes-frame_interval*(frames_per_clip-1), frame_interval*frames_per_clip):
+                            self.index_map.append((index, t))
+                            if t < (nframes-frame_interval*(frames_per_clip-1)) * mask_split[0]:
+                                self.train_indices.append(idx)
+                            elif t < (nframes-frame_interval*(frames_per_clip-1)) * (mask_split[0] + mask_split[1]):
+                                self.val_indices.append(idx)
+                            else:
+                                self.test_indices.append(idx)
+                            self.num_samples[index] += 1
+                            idx += 1
+
 
                     index += 1
 
@@ -218,10 +341,11 @@ class Radar(Dataset):
             return len(self.index_map)
         
     def __getitem__(self, idx):
-        if self.mode == 0:
+        if self.mode == 0 or self.mode == 4:
             index, t = self.index_map[idx]
 
             video = self.videos[index]
+            ns = self.num_samples[index]
             label = self.labels[index]
     
             clip = []
@@ -253,7 +377,7 @@ class Radar(Dataset):
 
             positive_clip_points, positive_clip_features = self.generate_positive_sample(clip_points, clip_features, idx)
 
-            return clip_points.astype(np.float32), clip_features.astype(np.float32), label, index, positive_clip_points.astype(np.float32), positive_clip_features.astype(np.float32)
+            return clip_points.astype(np.float32), clip_features.astype(np.float32), label, index, t, ns, positive_clip_points.astype(np.float32), positive_clip_features.astype(np.float32)
         
         elif self.mode == 1:
             video = self.videos[idx]
@@ -332,9 +456,10 @@ class Radar(Dataset):
 
             return vid_points.astype(np.float32), vid_features.astype(np.float32), (y1.astype(np.float32), y2.astype(np.float32), avg_period, optimal_stride, count)
         
-        elif self.mode == 3:
-            index, indices = self.index_map[idx]
+        elif self.mode == 3 or self.mode == 5 or self.mode == 6:
+            index, indices, seg_num = self.index_map[idx]
             video = self.videos[index]
+            ns = self.num_samples[index]
             label = self.labels[index]
     
             clip = []
@@ -366,7 +491,7 @@ class Radar(Dataset):
 
             positive_clip_points, positive_clip_features = self.generate_positive_sample(clip_points, clip_features, idx)
 
-            return clip_points.astype(np.float32), clip_features.astype(np.float32), label, index, positive_clip_points.astype(np.float32), positive_clip_features.astype(np.float32)
+            return clip_points.astype(np.float32), clip_features.astype(np.float32), label, index, seg_num, ns, positive_clip_points.astype(np.float32), positive_clip_features.astype(np.float32)
         
         else:
             assert(False, "Invalid mode")
@@ -375,7 +500,10 @@ class Radar(Dataset):
         if idx not in self.train_indices:
             return clip_points, clip_features
 
-        index, _ = self.index_map[idx]
+        if self.mode == 3 or self.mode == 5 or self.mode == 6:
+            index, _, _ = self.index_map[idx]
+        else:
+            index, _ = self.index_map[idx]
 
         if self.generate_positive[index][0] != -1:
             index = random.choice(self.generate_positive[index])
@@ -464,7 +592,22 @@ class Radar(Dataset):
             return y1, y2, 1.0, 1
                         
 if __name__ == '__main__':
-    dataset = Radar(root='/home/alan/Documents/radar-nn-model/data/radar/test', mode=3, frames_per_clip=24, num_points=1024)
-    for vid, points, label, index, _, _ in dataset:
-        print(vid.shape, points.shape, label, index)
+    dataset = Radar(root='/home/alan/Documents/radar-nn-model/data/radar/train_sd_big', mode=6, frames_per_clip=24, num_points=1024)
+    # for vid, points, label, index, start, vid_len, _, _ in dataset:
+    #     print(vid.shape, points.shape, label, index, start, vid_len)
+    print(len(dataset))
+    nums_of_videos = [0] * dataset.num_classes
+    nums_samples = [0] * dataset.num_classes
+    for n in range(len(dataset.labels)):
+        label = dataset.labels[n]
+        samples = dataset.num_samples[n]
+        nums_of_videos[label] += 1
+        nums_samples[label] += samples
+    nums_of_clips = [0] * dataset.num_classes
+    for index, _, segnum in dataset.index_map:
+        nums_of_clips[dataset.labels[index]] += 1
+    
+    print(nums_of_videos)
+    print(nums_of_clips)
+    print(nums_samples)
     

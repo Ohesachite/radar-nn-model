@@ -7,7 +7,7 @@ from sklearn.cluster import DBSCAN
 import scipy as sp
 from scipy.interpolate import griddata
 
-def process_radar_data(root, fps=16, train=True, eps=0.05, min_samples=3, radars=None, label_offset=None, count_metadata=False):
+def process_radar_data(root, fps=16, train=True, eps=0.05, min_samples=3, radars=None, label_offset=None, count_metadata=False, testoutdir=None):
 
     point_clouds = {}
     count_data = {}
@@ -106,7 +106,10 @@ def process_radar_data(root, fps=16, train=True, eps=0.05, min_samples=3, radars
     if train:
         new_root = os.path.join(root, "../train")
     else:
-        new_root = os.path.join(root, "../test_1r")
+        if testoutdir is not None:
+            new_root = os.path.join(root, "..", testoutdir)
+        else:
+            new_root = os.path.join(root, "../test")
 
     if not os.path.exists(new_root):
         os.makedirs(new_root)
@@ -143,7 +146,7 @@ def process_radar_data(root, fps=16, train=True, eps=0.05, min_samples=3, radars
             with open(os.path.join(new_root, "segment_boundaries.json"), 'r') as old_segmentation_file:
                 try:
                     segments = json.load(old_segmentation_file)
-                except JSONDecodeError:
+                except json.decoder.JSONDecodeError:
                     segments = {}
         else:
             segments = {}
@@ -151,10 +154,10 @@ def process_radar_data(root, fps=16, train=True, eps=0.05, min_samples=3, radars
         with open(os.path.join(new_root, "segment_boundaries.json"), 'w') as segmentation_file:
 
             for key in new_point_clouds.keys():
-                if not train:
-                    print(new_point_clouds[key].shape)
-                    bounds = run_segmentation_algorithm(new_point_clouds[key])
-                    print(key, bounds)
+                # if not train:
+                print(new_point_clouds[key].shape)
+                bounds = run_segmentation_algorithm(new_point_clouds[key])
+                print(key, bounds)
 
                 if label_offset is not None:
                     if key[1][0] == '0':
@@ -169,18 +172,18 @@ def process_radar_data(root, fps=16, train=True, eps=0.05, min_samples=3, radars
 
                     new_file_name = "label_" + key[0] + "_" + new_label + ".npy"
 
-                    if not train:
-                        if key[0] not in segments.keys():
-                            segments[key[0]] = {}
-                        segments[key[0]][new_label] = bounds
+                    # if not train:
+                    if key[0] not in segments.keys():
+                        segments[key[0]] = {}
+                    segments[key[0]][new_label] = bounds
 
                 else:
                     new_file_name = "label_" + key[0] + "_" + key[1] + ".npy"
 
-                    if not train:
-                        if key[0] not in segments.keys():
-                            segments[key[0]] = {}
-                        segments[key[0]][key[1]] = bounds
+                    # if not train:
+                    if key[0] not in segments.keys():
+                        segments[key[0]] = {}
+                    segments[key[0]][key[1]] = bounds
 
                 with open(os.path.join(new_root, new_file_name), 'wb') as new_file:
                     np.save(new_file, new_point_clouds[key])
@@ -275,36 +278,49 @@ def run_segmentation_algorithm(cat_point_cloud_vid, grid_size=64):
                 region_rc = region_r[:,candidate_regions[j]]
                 region_score[i,j] = np.sum(region_rc)
         
-        def best_boundaries(region_scores, current_index, phase, up_index=None, decay_factor=0.0):
-            if current_index == len(region_scores):
-                return 0, 1.0, []
+        def best_boundaries(region_scores, decay_factor=0.002):
+            num_regions = len(region_scores)
+            seg_scores = np.zeros((num_regions // 2 + 1, num_regions))
+            best_prev_up_index = -np.ones((num_regions // 2 + 1, num_regions, 2), dtype=int)
             
-            if phase == 1:
-                score1, dec1, f1 = best_boundaries(region_scores, current_index+1, -1, up_index=current_index)
-                score2, dec2, f2 = best_boundaries(region_scores, current_index+1, 1)
-                if score1 * dec1 > score2 * dec2:
-                    score = score1
-                    boundaries = f1
-                    multipler = dec1
-                else:
-                    score = score2
-                    boundaries = f2
-                    multipler = dec2
-            else:
-                score1, dec1, f1 = best_boundaries(region_scores, current_index+1, 1)
-                score2, dec2, f2 = best_boundaries(region_scores, current_index+1, -1, up_index=up_index)
-                if (score1 + region_scores[up_index, up_index] + region_scores[current_index, current_index] - 2*region_scores[up_index, current_index]) * dec1 * (1 - decay_factor) > score2 * dec2:
-                    score = score1 + region_scores[up_index, up_index] + region_scores[current_index, current_index] - 2*region_scores[up_index, current_index]
-                    boundaries = f1 + [[up_index, current_index]]
-                    multipler = dec1 * (1 - decay_factor)
-                else:
-                    score = score2
-                    boundaries = f2
-                    multipler = dec2
+            memoized_block_scores = np.zeros(region_scores.shape)
+            
+            for pot_up in range(num_regions):
+                for pot_down in range(num_regions):
+                    memoized_block_scores[pot_up, pot_down] = region_scores[pot_up, pot_up] + region_scores[pot_down, pot_down] - 2*region_scores[pot_up, pot_down]
+            
+            for pot_down in range(1, num_regions):
+                best_up = np.argmax(memoized_block_scores[:pot_down, pot_down])
+                best_prev_up_index[1, pot_down, 1] = best_up
+                seg_scores[1, pot_down] = memoized_block_scores[best_up, pot_down]
+                
+            for segn in range(2, num_regions // 2 + 1):
+                for pot_down in range(segn * 2 - 1, num_regions):
+                    up_vect = np.repeat(np.expand_dims(memoized_block_scores[(segn-1)*2:pot_down, pot_down], axis=0), pot_down-(segn-1)*2, axis=0)
+                    prev_vect = np.repeat(np.expand_dims(seg_scores[segn-1, (segn-1)*2-1:pot_down-1], axis=1), pot_down-(segn-1)*2, axis=1)
+                    sum_matrix = np.triu(up_vect + prev_vect)
                     
-            return score, multipler, boundaries
+                    unadj_prev_up = np.unravel_index(np.argmax(sum_matrix), sum_matrix.shape)
+                    best_prev_up = (unadj_prev_up[0] + (segn-1)*2 - 1, unadj_prev_up[1] + (segn-1)*2)
+                    best_prev_up_index[segn, pot_down, :] = best_prev_up
+                    
+                    seg_scores[segn, pot_down] = seg_scores[segn-1, best_prev_up[0]] + memoized_block_scores[best_prev_up[1], pot_down]
+                    
+            for segn in range(num_regions // 2 + 1):
+                seg_scores[segn,:] *=  (1 - decay_factor)**segn
+                
+            best_seg_index = np.unravel_index(np.argmax(seg_scores), seg_scores.shape)
+            best_seg = []
+            
+            curr_down = best_seg_index[1]
+            for segn in range(best_seg_index[0], 0, -1):
+                curr_prev_up = best_prev_up_index[segn, curr_down, :]
+                best_seg.append([curr_prev_up[1], curr_down])
+                curr_down = curr_prev_up[0]
+            
+            return best_seg
         
-        _, _, rn_boundaries = best_boundaries(region_score, 0, 1)
+        rn_boundaries = best_boundaries(region_score)
         
         peak_boundaries = []
         
@@ -342,6 +358,8 @@ def run_segmentation_algorithm(cat_point_cloud_vid, grid_size=64):
             yz_correlation = np.mean(np.multiply(dv_tyz[i,:,:], dv_tyz[j,:,:]))
             
             ssm_save[i,j] = xy_correlation + xz_correlation + yz_correlation
+
+    print("Correlation finished")
             
     ssm_diag = np.diag(ssm_save)
     ssm_diag_peaks, _ = sp.signal.find_peaks(ssm_diag)
@@ -369,6 +387,10 @@ def run_segmentation_algorithm(cat_point_cloud_vid, grid_size=64):
             else:
                 sbr = (ssm_diag_peaks[bound_r] + ssm_diag_peaks[bound_r+1]) // 2
 
+            
+            if sbr - sbl < 8:
+                continue
+
             region_in_bounds_order = np.argsort(np.diag(ssm_save)[sbl:sbr+1])[::-1]
             region_in_bounds_order += sbl
             region_in_bounds_order = region_in_bounds_order.tolist()
@@ -387,28 +409,65 @@ def run_segmentation_algorithm(cat_point_cloud_vid, grid_size=64):
 
 if __name__ == "__main__":
     base_folder = '/home/alan/Documents/radar-nn-model/data/radar'
+    # Set 8
     # process_radar_data(root=os.path.join(base_folder, 'set8_0'), eps=0.04, min_samples=3, radars=[0,1,2])                             # 1-3
-    # process_radar_data(root=os.path.join(base_folder, 'set8_60'), eps=0.04, min_samples=3, radars=[0,1,2], label_offset=3)            # 4-6
-    # process_radar_data(root=os.path.join(base_folder, 'set8_120'), eps=0.04, min_samples=3, radars=[0,1,2], label_offset=6)           # 7-9
-    # process_radar_data(root=os.path.join(base_folder, 'set8_180'), eps=0.04, min_samples=3, radars=[0,1,2], label_offset=9)           # 10-12
-    # process_radar_data(root=os.path.join(base_folder, 'set8_240'), eps=0.04, min_samples=3, radars=[0,1,2], label_offset=12)          # 13-15
-    # process_radar_data(root=os.path.join(base_folder, 'set8_300'), eps=0.04, min_samples=3, radars=[0,1,2], label_offset=15)          # 16-18
     # process_radar_data(root=os.path.join(base_folder, 'set8_0'), eps=0.06, min_samples=5, radars=[0], label_offset=18)                # 19-21
     # process_radar_data(root=os.path.join(base_folder, 'set8_0'), eps=0.06, min_samples=5, radars=[1], label_offset=21)                # 22-24
     # process_radar_data(root=os.path.join(base_folder, 'set8_0'), eps=0.06, min_samples=5, radars=[2], label_offset=24)                # 25-27
     # process_radar_data(root=os.path.join(base_folder, 'set8_60'), eps=0.06, min_samples=5, train=False, radars=[0])                   # 1-3
-    # process_radar_data(root=os.path.join(base_folder, 'set8_60'), eps=0.06, min_samples=5, train=False, radars=[1], label_offset=3)   # 22-24
-    # process_radar_data(root=os.path.join(base_folder, 'set8_60'), eps=0.06, min_samples=5, train=False, radars=[2], label_offset=6)   # 25-27
-    # process_radar_data(root=os.path.join(base_folder, 'set8_240'), eps=0.06, min_samples=5, train=False, radars=[0], label_offset=9)  # 28-30
-    # process_radar_data(root=os.path.join(base_folder, 'set8_240'), eps=0.06, min_samples=5, train=False, radars=[1], label_offset=12) # 31-33
-    # process_radar_data(root=os.path.join(base_folder, 'set8_240'), eps=0.06, min_samples=5, train=False, radars=[2], label_offset=15) # 34-36
+    # process_radar_data(root=os.path.join(base_folder, 'set8_60'), eps=0.06, min_samples=5, train=False, radars=[1], label_offset=3)   # 4-6
+    # process_radar_data(root=os.path.join(base_folder, 'set8_60'), eps=0.06, min_samples=5, train=False, radars=[2], label_offset=6)   # 7-9
+    # process_radar_data(root=os.path.join(base_folder, 'set8_240'), eps=0.06, min_samples=5, train=False, radars=[0], label_offset=9)  # 10-12
+    # process_radar_data(root=os.path.join(base_folder, 'set8_240'), eps=0.06, min_samples=5, train=False, radars=[1], label_offset=12) # 13-15
+    # process_radar_data(root=os.path.join(base_folder, 'set8_240'), eps=0.06, min_samples=5, train=False, radars=[2], label_offset=15) # 16-18
     # process_radar_data(root=os.path.join(base_folder, 'set8_120'), eps=0.06, min_samples=5, train=False, radars=[0], label_offset=18) # 19-21
     # process_radar_data(root=os.path.join(base_folder, 'set8_120'), eps=0.06, min_samples=5, train=False, radars=[1], label_offset=21) # 22-24
     # process_radar_data(root=os.path.join(base_folder, 'set8_120'), eps=0.06, min_samples=5, train=False, radars=[2], label_offset=24) # 25-27
     # process_radar_data(root=os.path.join(base_folder, 'set8_300'), eps=0.06, min_samples=5, train=False, radars=[0], label_offset=27) # 28-30
     # process_radar_data(root=os.path.join(base_folder, 'set8_300'), eps=0.06, min_samples=5, train=False, radars=[1], label_offset=30) # 31-33
     # process_radar_data(root=os.path.join(base_folder, 'set8_300'), eps=0.06, min_samples=5, train=False, radars=[2], label_offset=33) # 34-36
-    # process_radar_data(root=os.path.join(base_folder, 'set8_180'), eps=0.06, min_samples=5, train=False, radars=[0], label_offset=36) # 28-30
-    # process_radar_data(root=os.path.join(base_folder, 'set8_180'), eps=0.06, min_samples=5, train=False, radars=[1], label_offset=39) # 31-33
-    # process_radar_data(root=os.path.join(base_folder, 'set8_180'), eps=0.06, min_samples=5, train=False, radars=[2], label_offset=42) # 34-36
-    process_radar_data(root=os.path.join(base_folder, 'set9_0'), eps=0.06, min_samples=5, train=False, radars=[0])                # 19-21
+    # process_radar_data(root=os.path.join(base_folder, 'set8_180'), eps=0.06, min_samples=5, train=False, radars=[0], label_offset=36) # 37-39
+    # process_radar_data(root=os.path.join(base_folder, 'set8_180'), eps=0.06, min_samples=5, train=False, radars=[1], label_offset=39) # 40-42
+    # process_radar_data(root=os.path.join(base_folder, 'set8_180'), eps=0.06, min_samples=5, train=False, radars=[2], label_offset=42) # 43-45
+
+    # Front testing
+    # process_radar_data(root=os.path.join(base_folder, 'set9_0'), eps=0.06, min_samples=5, train=False, radars=[0])
+
+    # Set 9
+    # process_radar_data(root=os.path.join(base_folder, 'set9_0'), eps=0.04, min_samples=3, radars=[0,1,2], label_offset=3)             # 4-6
+    # process_radar_data(root=os.path.join(base_folder, 'set9_0'), eps=0.06, min_samples=5, radars=[0], label_offset=27)                # 28-30
+    # process_radar_data(root=os.path.join(base_folder, 'set9_0'), eps=0.06, min_samples=5, radars=[1], label_offset=30)                # 31-33
+    # process_radar_data(root=os.path.join(base_folder, 'set9_0'), eps=0.06, min_samples=5, radars=[2], label_offset=33)                # 34-36
+    # process_radar_data(root=os.path.join(base_folder, 'set9_60'), eps=0.06, min_samples=5, train=False, radars=[0])                   # 1-3
+    # process_radar_data(root=os.path.join(base_folder, 'set9_60'), eps=0.06, min_samples=5, train=False, radars=[1], label_offset=3)   # 4-6
+    # process_radar_data(root=os.path.join(base_folder, 'set9_60'), eps=0.06, min_samples=5, train=False, radars=[2], label_offset=6)   # 7-9
+    # process_radar_data(root=os.path.join(base_folder, 'set9_240'), eps=0.06, min_samples=5, train=False, radars=[0], label_offset=9)  # 10-12
+    # process_radar_data(root=os.path.join(base_folder, 'set9_240'), eps=0.06, min_samples=5, train=False, radars=[1], label_offset=12) # 13-15
+    # process_radar_data(root=os.path.join(base_folder, 'set9_240'), eps=0.06, min_samples=5, train=False, radars=[2], label_offset=15) # 16-18
+    # process_radar_data(root=os.path.join(base_folder, 'set9_120'), eps=0.06, min_samples=5, train=False, radars=[0], label_offset=18) # 19-21
+    # process_radar_data(root=os.path.join(base_folder, 'set9_120'), eps=0.06, min_samples=5, train=False, radars=[1], label_offset=21) # 22-24
+    # process_radar_data(root=os.path.join(base_folder, 'set9_120'), eps=0.06, min_samples=5, train=False, radars=[2], label_offset=24) # 25-27
+    # process_radar_data(root=os.path.join(base_folder, 'set9_300'), eps=0.06, min_samples=5, train=False, radars=[0], label_offset=27) # 28-30
+    # process_radar_data(root=os.path.join(base_folder, 'set9_300'), eps=0.06, min_samples=5, train=False, radars=[1], label_offset=30) # 31-33
+    # process_radar_data(root=os.path.join(base_folder, 'set9_300'), eps=0.06, min_samples=5, train=False, radars=[2], label_offset=33) # 34-36
+    # process_radar_data(root=os.path.join(base_folder, 'set9_180'), eps=0.06, min_samples=5, train=False, radars=[0], label_offset=36) # 37-39
+    # process_radar_data(root=os.path.join(base_folder, 'set9_180'), eps=0.06, min_samples=5, train=False, radars=[1], label_offset=39) # 40-42
+    # process_radar_data(root=os.path.join(base_folder, 'set9_180'), eps=0.06, min_samples=5, train=False, radars=[2], label_offset=42) # 43-45
+
+    # Integration
+    # process_radar_data(root=os.path.join(base_folder, 'setenv-935s_0'), eps=0.06, min_samples=5, train=False, radars=[1], testoutdir='test_s1_0')                       # 1
+    # process_radar_data(root=os.path.join(base_folder, 'setenv-935s_0'), eps=0.06, min_samples=5, train=False, radars=[2], testoutdir='test_s1_0', label_offset=1)       # 2
+    # process_radar_data(root=os.path.join(base_folder, 'setenv-935u_0'), eps=0.06, min_samples=5, train=False, radars=[1], testoutdir='test_s1_60')                      # 1
+    # process_radar_data(root=os.path.join(base_folder, 'setenv-935u_0'), eps=0.06, min_samples=5, train=False, radars=[2], testoutdir='test_s1_60', label_offset=1)      # 2
+    # process_radar_data(root=os.path.join(base_folder, 'setenv-935s_60'), eps=0.06, min_samples=5, train=False, radars=[1], testoutdir='test_u1_0')                      # 1
+    # process_radar_data(root=os.path.join(base_folder, 'setenv-935s_60'), eps=0.06, min_samples=5, train=False, radars=[2], testoutdir='test_u1_0', label_offset=1)      # 2
+    # process_radar_data(root=os.path.join(base_folder, 'setenv-935u_60'), eps=0.06, min_samples=5, train=False, radars=[1], testoutdir='test_u1_60')                     # 1
+    # process_radar_data(root=os.path.join(base_folder, 'setenv-935u_60'), eps=0.06, min_samples=5, train=False, radars=[2], testoutdir='test_u1_60', label_offset=1)     # 2
+    # process_radar_data(root=os.path.join(base_folder, 'setenv-5158s_0'), eps=0.06, min_samples=5, train=False, radars=[1], testoutdir='test_s2_0')                      # 1
+    # process_radar_data(root=os.path.join(base_folder, 'setenv-5158s_0'), eps=0.06, min_samples=5, train=False, radars=[2], testoutdir='test_s2_0', label_offset=1)      # 2
+    # process_radar_data(root=os.path.join(base_folder, 'setenv-5158u_0'), eps=0.06, min_samples=5, train=False, radars=[1], testoutdir='test_s2_270')                    # 1
+    # process_radar_data(root=os.path.join(base_folder, 'setenv-5158u_0'), eps=0.06, min_samples=5, train=False, radars=[2], testoutdir='test_s2_270', label_offset=2)    # 2
+    # process_radar_data(root=os.path.join(base_folder, 'setenv-5158s_270'), eps=0.06, min_samples=5, train=False, radars=[1], testoutdir='test_u2_0')                    # 1
+    # process_radar_data(root=os.path.join(base_folder, 'setenv-5158s_270'), eps=0.06, min_samples=5, train=False, radars=[2], testoutdir='test_u2_0', label_offset=1)    # 2
+    # process_radar_data(root=os.path.join(base_folder, 'setenv-5158u_270'), eps=0.06, min_samples=5, train=False, radars=[1], testoutdir='test_u2_270')                  # 1
+    # process_radar_data(root=os.path.join(base_folder, 'setenv-5158u_270'), eps=0.06, min_samples=5, train=False, radars=[2], testoutdir='test_u2_270', label_offset=2)  # 2

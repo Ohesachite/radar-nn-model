@@ -173,8 +173,20 @@ class ConfusionMatrix(object):
         for index in zip(pred, target):
             self.class_counts[index] += 1
 
+    def add_individual_pred(self, target, pred):
+        target = target.long()
+        pred = pred.long()
+        self.class_totals[target] += 1
+        self.class_counts[pred, target] += 1
+
     def get_confusion_matrix(self):
         return torch.div(self.class_counts, self.class_totals)
+
+    def class_precisions(self):
+        return torch.diagonal(self.class_counts) / torch.sum(self.class_counts, 0) 
+
+    def class_recalls(self):
+        return torch.diagonal(self.class_counts) / torch.sum(self.class_counts, 1) 
 
 def accuracy(output, target, topk=(1,)):
     """Computes the accuracy over the k top predictions for the specified values of k"""
