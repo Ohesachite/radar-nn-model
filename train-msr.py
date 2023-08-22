@@ -26,7 +26,7 @@ def train_one_epoch(model, criterion, optimizer, lr_scheduler, data_loader, devi
     metric_logger.add_meter('clips/s', utils.SmoothedValue(window_size=10, fmt='{value:.3f}'))
 
     header = 'Epoch: [{}]'.format(epoch)
-    for clip, features, target, _, _, _ in metric_logger.log_every(data_loader, print_freq, header):
+    for clip, features, target, _, _, _, _, _ in metric_logger.log_every(data_loader, print_freq, header):
         start_time = time.time()
         clip, features, target = clip.to(device), features.to(device), target.to(device)
         output = model(clip, features)
@@ -53,7 +53,7 @@ def evaluate(model, criterion, data_loader, device):
     video_prob = {}
     video_label = {}
     with torch.no_grad():
-        for clip, features, target, video_idx, _, _ in metric_logger.log_every(data_loader, 100, header):
+        for clip, features, target, video_idx, vid_samp_n, vid_n_samp, _, _ in metric_logger.log_every(data_loader, 100, header):
             clip = clip.to(device, non_blocking=True)
             features = features.to(device, non_blocking=True)
             target = target.to(device, non_blocking=True)
@@ -71,29 +71,37 @@ def evaluate(model, criterion, data_loader, device):
             target = target.cpu().numpy()
             video_idx = video_idx.cpu().numpy()
             prob = prob.cpu().numpy()
+            vid_samp_n = vid_samp_n.cpu().numpy()
+            vid_n_samp = vid_n_samp.cpu().numpy()
             for i in range(0, batch_size):
                 idx = video_idx[i]
                 if idx in video_prob:
-                    video_prob[idx] += prob[i]
+                    video_prob[idx][vid_samp_n[i], :] += prob[i]
                 else:
-                    video_prob[idx] = prob[i]
+                    video_prob[idx] = np.zeros((vid_n_samp[i], data_loader.dataset.num_classes))
+                    video_prob[idx][vid_samp_n[i], :] += prob[i]
                     video_label[idx] = target[i]
             metric_logger.update(loss=loss.item())
             metric_logger.meters['acc1'].update(acc1.item(), n=batch_size)
             metric_logger.meters['acc5'].update(acc5.item(), n=batch_size)
+
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
 
     print(' * Clip Acc@1 {top1.global_avg:.3f} Clip Acc@5 {top5.global_avg:.3f}'.format(top1=metric_logger.acc1, top5=metric_logger.acc5))
 
     confusion_matrix = confusion.get_confusion_matrix().cpu().numpy()
+    precision = confusion.class_precisions().cpu().numpy()
+    recall = confusion.class_recalls().cpu().numpy()
 
     print('Confusion Matrix:')
     with np.printoptions(precision=3):
         print(confusion_matrix)
+        print(precision)
+        print(recall)
 
     # video level prediction
-    video_pred = {k: np.argmax(v) for k, v in video_prob.items()}
+    video_pred = {k: np.argmax(np.sum(v, axis=0)) for k, v in video_prob.items()}
     pred_correct = [video_pred[k]==video_label[k] for k in video_pred]
     total_acc = np.mean(pred_correct)
 
@@ -109,13 +117,39 @@ def evaluate(model, criterion, data_loader, device):
     print(' * Video Acc@1 %f'%total_acc)
     print(' * Class Acc@1 %s'%str(class_acc))
 
-    return total_acc
+    samp_confusion = utils.ConfusionMatrix(10, 'cpu')
+    samp3_prob = {}
 
+    for k, v in video_prob.items():
+            prob3_size = v.shape[0] - 2
+            if prob3_size > 0:
+                samp3_prob[k] = v[:prob3_size,:] + v[1:1+prob3_size,:] + v[2:2+prob3_size,:]
+            else:
+                samp3_prob[k] = v
+
+    samp3_pred = {k: np.argmax(v, axis=1) for k, v in samp3_prob.items()}
+    pred3_correct = [samp3_pred[k][i]==video_label[k] for k in samp3_pred for i in range(len(samp3_pred[k]))]
+    samp3_acc = np.mean(pred3_correct)
+
+    for k, v in samp3_pred.items():
+        label = video_label[k]
+        for v2 in v:
+            samp_confusion.add_individual_pred(torch.tensor(label), torch.tensor(v2))
+
+    print(' * 3 Samples Acc@1 %f'%samp3_acc)
+    print(' * 3 Samples Acc By Class@1 %s'%str(samp_confusion.class_precisions().numpy()))
+
+    return total_acc, samp3_acc, samp_confusion, metric_logger.meters['acc1'].global_avg, confusion
 
 def main(args):
 
     if args.output_dir:
         utils.mkdir(args.output_dir)
+
+    if args.result_file:
+        result_file = open(args.result_file, "w")
+    else:
+        result_file = None
 
     print(args)
     print("torch version: ", torch.__version__)
@@ -192,26 +226,41 @@ def main(args):
     print("Start training")
     start_time = time.time()
     acc = 0
-    for epoch in range(args.start_epoch, args.epochs):
-        train_one_epoch(model, criterion, optimizer, lr_scheduler, data_loader, device, epoch, args.print_freq)
+    if args.epochs > args.start_epoch:
+        for epoch in range(args.start_epoch, args.epochs):
+            train_one_epoch(model, criterion, optimizer, lr_scheduler, data_loader, device, epoch, args.print_freq)
 
-        acc = max(acc, evaluate(model, criterion, data_loader_test, device=device))
+            epoch_acc, samp_acc, samp_confusion, clip_acc, clip_confusion = evaluate(model, criterion, data_loader_test, device=device)
+            
+            acc = max(acc, epoch_acc)
 
-        if args.output_dir:
-            checkpoint = {
-                'model': model_without_ddp.state_dict(),
-                'optimizer': optimizer.state_dict(),
-                'lr_scheduler': lr_scheduler.state_dict(),
-                'epoch': epoch,
-                'args': args}
-            utils.save_on_master(
-                checkpoint,
-                os.path.join(args.output_dir, 'p41r_ckpt_{}.pth'.format(epoch)))
+            if args.output_dir:
+                checkpoint = {
+                    'model': model_without_ddp.state_dict(),
+                    'optimizer': optimizer.state_dict(),
+                    'lr_scheduler': lr_scheduler.state_dict(),
+                    'epoch': epoch,
+                    'args': args}
+                utils.save_on_master(
+                    checkpoint,
+                    os.path.join(args.output_dir, 'p41r_ckpt_{}.pth'.format(epoch)))
+    else:
+        acc, samp_acc, samp_confusion, clip_acc, clip_confusion = evaluate(model, criterion, data_loader_test, device=device)
 
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
     print('Training time {}'.format(total_time_str))
     print('Accuracy {}'.format(acc))
+
+    if result_file is not None:
+        result_file.write('Final accuracies (sample acc, sample pre by class, sample rec by class, clip acc, clip pre by class, clip rec by class):\n')
+        result_file.write('{}\n'.format(samp_acc))
+        result_file.write('%s\n'%str(samp_confusion.class_precisions().numpy()))
+        result_file.write('%s\n'%str(samp_confusion.class_recalls().numpy()))
+        result_file.write('{}\n'.format(clip_acc))
+        result_file.write('%s\n'%str(clip_confusion.class_precisions().cpu().numpy()))
+        result_file.write('%s\n'%str(clip_confusion.class_recalls().cpu().numpy()))
+        result_file.close()
 
 
 def parse_args():
@@ -253,6 +302,7 @@ def parse_args():
     # output
     parser.add_argument('--print-freq', default=10, type=int, help='print frequency')
     parser.add_argument('--output-dir', default='', type=str, help='path where to save')
+    parser.add_argument('--result-file', default='', type=str, help='path to save accuracies')
     # resume
     parser.add_argument('--resume', default='', help='resume from checkpoint')
     parser.add_argument('--start-epoch', default=0, type=int, metavar='N', help='start epoch')

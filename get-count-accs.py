@@ -198,7 +198,92 @@ def find_boundaries(ssm_peak_matrix, decay=0.002):
             
     return peak_boundaries
 
-def counting_loop(sets, decay=0.002):
+def dynamic_bound_combination(boundaries, label):
+    for i in range(len(boundaries)-1, -1, -1):
+        bound_l, bound_r = boundaries[i]
+        if bound_r - bound_l < 8:
+            del boundaries[i]
+        
+    bound_sizes = [bound_r - bound_l + 1 for bound_l, bound_r in boundaries]
+    print(bound_sizes)
+    
+    new_boundaries = []
+    if label == 'sq':
+        bound_size_expectation = 22
+    elif label == 'aud':
+        bound_size_expectation = 60
+    elif label == 'lud':
+        bound_size_expectation = 24
+    elif label == 'pu':
+        bound_size_expectation = int(sum(bound_sizes) * 3 / len(boundaries) / 4)
+    elif label == 'su':
+        bound_size_expectation = 23
+    else:
+        bound_size_expectation = 0
+                                     
+    combo_map = [0] * len(boundaries)
+    lpointer = 0
+    rpointer = len(boundaries) - 1
+    while lpointer < len(boundaries) and bound_sizes[lpointer] >= bound_size_expectation:
+        lpointer += 1
+    while rpointer >= 0 and bound_sizes[rpointer] >= bound_size_expectation:
+        rpointer -= 1
+        
+    while lpointer < rpointer:
+        if bound_sizes[lpointer] > bound_sizes[rpointer]:
+            if rpointer < len(boundaries) - 1 and combo_map[rpointer+1] == 0:
+                combo_map[rpointer] = 1
+                combo_map[rpointer+1] = -1
+                rpointer -= 1
+            else:
+                combo_map[rpointer] = -1
+                combo_map[rpointer-1] = 1
+                rpointer -= 2
+            
+            while rpointer >= 0 and bound_sizes[rpointer] >= bound_size_expectation:
+                rpointer -= 1
+                
+        else:
+            if lpointer > 0 and combo_map[lpointer-1] == 0:
+                combo_map[lpointer] = -1
+                combo_map[lpointer-1] = 1
+                lpointer += 1
+            else:
+                combo_map[lpointer] = 1
+                combo_map[lpointer+1] = -1
+                lpointer += 2
+            
+            while lpointer < len(boundaries) and bound_sizes[lpointer] >= bound_size_expectation:
+                lpointer += 1\
+        
+    if lpointer == rpointer and bound_sizes[lpointer] < bound_size_expectation:
+        if lpointer != 0 and combo_map[lpointer-1] == 0 and rpointer != len(boundaries) - 1 and combo_map[rpointer+1] == 0:
+            if bound_sizes[lpointer-1] > bound_sizes[rpointer+1]:
+                combo_map[rpointer] = 1
+                combo_map[rpointer+1] = -1
+            else:
+                combo_map[lpointer] = -1
+                combo_map[lpointer-1] = 1
+        elif lpointer != 0 and combo_map[lpointer-1] == 0:
+            combo_map[lpointer] = -1
+            combo_map[lpointer-1] = 1
+        elif rpointer != len(boundaries) - 1 and combo_map[rpointer+1] == 0:
+            combo_map[rpointer] = 1
+            combo_map[rpointer+1] = -1
+        
+    i = 0
+    while i < len(boundaries):
+        if combo_map[i] == 1:
+            new_boundaries.append([boundaries[i][0], boundaries[i+1][1]])
+            i += 2
+        elif combo_map[i] == 0:
+            new_boundaries.append([boundaries[i][0], boundaries[i][1]])
+            i += 1
+            
+    print(new_boundaries)
+    return new_boundaries
+
+def counting_loop(sets, bgtc, min_window, decay=0.002):
     count_acc = {}
 
     file_names = [os.path.join("data/radar/", dataset, file) for dataset in sets for file in os.listdir("data/radar/" + dataset) if (file.endswith(".csv") and not file == os.path.basename("cycle_data.csv"))]
@@ -252,120 +337,32 @@ def counting_loop(sets, decay=0.002):
         print("Correlation took", end_time-start_time, "seconds")
         
         fig_file_name = file_name.split('/')[2] + '_' + file_name.split('/')[3].split('.')[0]
+        exercise = file_name.split('/')[-1].split('.')[0].split('_')[1]
 
         start_time = time.time()
-        ssm_diag = np.diag(ssm_save)
-        ssm_diag_peaks, _ = sp.signal.find_peaks(ssm_diag)
-        if len(ssm_diag_peaks) > 0:
-            ssm_peak_matrix = np.diag(ssm_diag[ssm_diag_peaks])
-            for r in range(ssm_peak_matrix.shape[0]):
-                for c in range(ssm_peak_matrix.shape[1]):
-                    ssm_peak_matrix[r,c] = ssm_save[ssm_diag_peaks[r], ssm_diag_peaks[c]]
 
-            bounds = find_boundaries(ssm_peak_matrix, decay=decay)
+        bounds = find_boundaries(ssm_save, decay=decay)
+        bounds = dynamic_bound_combination(bounds, exercise)
 
-            end_time = time.time()
-            print("Segmentation took", end_time-start_time, "seconds")
-
-            n_excluded_bounds = 0
-            for i in range(len(bounds)):
-                bound_l, bound_r = bounds[i]
-                if bound_l == 0:
-                    sbl = (ssm_diag_peaks[bound_l]) // 2
-                else:
-                    sbl = (ssm_diag_peaks[bound_l] + ssm_diag_peaks[bound_l-1]) // 2 + 1
-
-                if bound_r == len(ssm_diag_peaks) - 1:
-                    sbr = (ssm_diag_peaks[bound_r] + vid_len) // 2
-                else:
-                    sbr = (ssm_diag_peaks[bound_r] + ssm_diag_peaks[bound_r+1]) // 2
-                    
-                if sbr - sbl < 8:
-                    n_excluded_bounds += 1
-                    continue
-            
-            count = len(bounds) - n_excluded_bounds
-            exercise = file_name.split('/')[-1].split('.')[0].split('_')[1]
-            
-            print(exercise, count)
-            set_num = file_name.split('/')[-2].split('_')[0][3:]
-            
-            if set_num == '8':
-                if exercise == 'idle':
-                    pgtc = [0]
-                elif exercise == 'aud' or exercise == 'lud':
-                    pgtc = [3, 6]
-                else:
-                    pgtc = [3]
-            elif set_num == '9' or set_num == 'env-935' or set_num == 'env-5158':
-                if exercise == 'idle':
-                    pgtc = [0]
-                elif exercise == 'aud' or exercise == 'lud':
-                    pgtc = [5, 10]
-                else:
-                    pgtc = [5]
-            elif set_num == '11':
-                if exercise == 'idle':
-                    pgtc = [0]
-                elif exercise == 'aud' or exercise == 'lud':
-                    pgtc = [10, 20]
-                else:
-                    pgtc = [10]
-            else:
-                assert False, "Using not set 8 or 9"
-            
-            if exercise not in count_acc:
-                count_acc[exercise] = [0, 0, 0]
-                
-            gtc = pgtc[min(range(len(pgtc)), key = lambda i: abs(pgtc[i]-count))]
-            
-            count_acc[exercise][0] += 1
-            if gtc != 0:
-                count_acc[exercise][1] += abs(count - gtc) / gtc
-                count_acc[exercise][2] += (abs(count - gtc) / gtc) ** 2
-            
+        end_time = time.time()
+        print("Segmentation took", end_time-start_time, "seconds")
+        
+        count = len(bounds)
+        
+        print(exercise, count)
+        
+        if exercise == 'idle':
+            gtc = 0
         else:
-            end_time = time.time()
-            print("No peaks were large enough, so terminating after", end_time-start_time, "seconds")
-            
-            count = 0
-            exercise = file_name.split('/')[-1].split('.')[0].split('_')[1]
-            print(exercise, count)
-            set_num = file_name.split('/')[-2].split('_')[0][3:]
-            
-            if set_num == '8':
-                if exercise == 'idle':
-                    pgtc = [0]
-                elif exercise == 'aud' or exercise == 'lud':
-                    pgtc = [3, 6]
-                else:
-                    pgtc = [3]
-            elif set_num == '9' or set_num == 'env-935' or set_num == 'env-5158':
-                if exercise == 'idle':
-                    pgtc = [0]
-                elif exercise == 'aud' or exercise == 'lud':
-                    pgtc = [5, 10]
-                else:
-                    pgtc = [5]
-            elif set_num == '11':
-                if exercise == 'idle':
-                    pgtc = [0]
-                elif exercise == 'aud' or exercise == 'lud':
-                    pgtc = [10, 20]
-                else:
-                    pgtc = [10]
-            else:
-                assert False, "Using not set 8 or 9"
-            
-            if exercise not in count_acc:
-                count_acc[exercise] = [0, 0, 0]
-                
-            gtc = pgtc[min(range(len(pgtc)), key = lambda i: abs(pgtc[i]-count))]
-            
-            count_acc[exercise][0] += 1
-            if gtc != 0:
-                count_acc[exercise][1] += abs(count - gtc) / gtc
-                count_acc[exercise][2] += ((count - gtc) / gtc) ** 2
+            gtc = bgtc
+        
+        if exercise not in count_acc:
+            count_acc[exercise] = [0, 0, 0]
+        
+        count_acc[exercise][0] += 1
+        if gtc != 0:
+            count_acc[exercise][1] += abs(count - gtc) / gtc
+            count_acc[exercise][2] += (abs(count - gtc) / gtc) ** 2
             
     return count_acc
 
@@ -389,6 +386,9 @@ def parse_args():
     parser.add_argument('--sets', nargs='+', default=['set8_0', 'set8_60', 'set8_120', 'set8_180', 'set8_240', 'set8_300'], type=str)
     parser.add_argument('--decay', default=0.002, type=float)
 
+    parser.add_argument('--base-count', default=5, type=int)
+    parser.add_argument('--min-window-size', default=8, type=int)
+
     args = parser.parse_args()
     print(args)
 
@@ -396,6 +396,6 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
-    count_accs = counting_loop(args.sets, decay=args.decay)
+    count_accs = counting_loop(args.sets, args.base_count, args.min_window_size, decay=args.decay)
     print(count_accs)
     save_counts(count_accs, args)

@@ -264,7 +264,8 @@ def main(args):
             frame_interval=args.frame_interval,
             num_points=args.num_points,
             mask_split=[0.8, 0.2, 0.0],
-            mode=args.train_mode
+            mode=args.train_mode,
+            decay=args.decay
     )
 
     dataset_test = Radar(
@@ -390,6 +391,7 @@ def parse_args():
     parser.add_argument('--clip-len', default=24, type=int, metavar='N', help='number of frames per clip')
     parser.add_argument('--frame-interval', default=1, type=int, metavar='N', help='interval of sampled frames')
     parser.add_argument('--num-points', default=1024, type=int, metavar='N', help='number of points per frame')
+    parser.add_argument('--decay', default=0.002, type=float, help='segmentation decay factor')
     # P4D
     parser.add_argument('--radius', default=0.5, type=float, help='radius for the ball query')
     parser.add_argument('--nsamples', default=32, type=int, help='number of neighbors for the ball query')
