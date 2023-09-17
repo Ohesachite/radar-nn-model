@@ -18,8 +18,6 @@ Compilation requires installation of PointNet++ PyTorch version, which can be fo
 
 Preprocessing script can be found in the following path: ``data/radar/process_data.py``
 
-Preprocessing performs DBSCAN and the interpolation and correlation steps of the segmentation
-
 ## Classification
 
 To run training for classification:
