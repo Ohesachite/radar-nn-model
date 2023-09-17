@@ -8,7 +8,6 @@ The code is tested with g++ (GCC) 9.4.0, PyTorch v1.12.1, CUDA 11.3.
 
 Compile the CUDA layers for [PointNet++](http://arxiv.org/abs/1706.02413), which we used for furthest point sampling (FPS) and radius neighbouring search:
 ```
-mv modules-pytorch-1.4.0/modules-pytorch-1.8.1 modules
 cd modules
 python setup.py install
 ```
@@ -18,3 +17,19 @@ Compilation requires installation of PointNet++ PyTorch version, which can be fo
 ## Preprocessing
 
 Preprocessing script can be found in the following path: ``data/radar/process_data.py``
+
+Preprocessing performs DBSCAN and the interpolation and correlation steps of the segmentation
+
+## Classification
+
+To run training for classification:
+```
+python train-radar.py
+```
+
+## Segmentation and Counting
+
+To gather results of the segmentation algorithm:
+```
+python get-count-accs.py
+```
