@@ -472,10 +472,10 @@ if __name__ == "__main__":
     # process_radar_data(root=os.path.join(base_folder, 'set9_180'), eps=0.06, min_samples=5, train=False, radars=[2], label_offset=42) # 43-45
 
     # C457 Set
-    # process_radar_data(root=os.path.join(base_folder, 'setenv-457_0'), eps=0.04, min_samples=3, radars=[0,1,2], label_offset=36)               # 4-6
-    # process_radar_data(root=os.path.join(base_folder, 'setenv-457_0'), eps=0.06, min_samples=5, radars=[0], label_offset=48)                   # 28-30
-    # process_radar_data(root=os.path.join(base_folder, 'setenv-457_0'), eps=0.06, min_samples=5, radars=[1], label_offset=60)                   # 31-33
-    # process_radar_data(root=os.path.join(base_folder, 'setenv-457_0'), eps=0.06, min_samples=5, radars=[2], label_offset=72)                   # 34-36
+    process_radar_data(root=os.path.join(base_folder, 'setenv-457_0'), eps=0.04, min_samples=3, radars=[0,1,2], label_offset=36)               # 4-6
+    process_radar_data(root=os.path.join(base_folder, 'setenv-457_0'), eps=0.06, min_samples=5, radars=[0], label_offset=48)                   # 28-30
+    process_radar_data(root=os.path.join(base_folder, 'setenv-457_0'), eps=0.06, min_samples=5, radars=[1], label_offset=60)                   # 31-33
+    process_radar_data(root=os.path.join(base_folder, 'setenv-457_0'), eps=0.06, min_samples=5, radars=[2], label_offset=72)                   # 34-36
     # process_radar_data(root=os.path.join(base_folder, 'setenv-457_seentar'), eps=0.06, min_samples=5, train=False, radars=[0], testoutdir='test_2seen', label_offset=45)                   # 28-30
     # process_radar_data(root=os.path.join(base_folder, 'setenv-457_seentar'), eps=0.06, min_samples=5, train=False, radars=[1], testoutdir='test_2seen', label_offset=57)                   # 31-33
     # process_radar_data(root=os.path.join(base_folder, 'setenv-457_seentar'), eps=0.06, min_samples=5, train=False, radars=[2], testoutdir='test_2seen', label_offset=69)                   # 34-36
@@ -545,3 +545,7 @@ if __name__ == "__main__":
     # process_radar_data(root=os.path.join(base_folder, 'set8_180'), eps=0.06, min_samples=5, train=False, radars=[0], testoutdir='rtest_180', label_offset=36) # 37-39
     # process_radar_data(root=os.path.join(base_folder, 'set8_180'), eps=0.06, min_samples=5, train=False, radars=[1], testoutdir='rtest_60', label_offset=39) # 40-42
     # process_radar_data(root=os.path.join(base_folder, 'set8_180'), eps=0.06, min_samples=5, train=False, radars=[2], testoutdir='rtest_300', label_offset=42) # 43-45
+
+    # NLoS
+    # process_radar_data(root=os.path.join(base_folder, 'set_10'), eps=0.06, min_samples=5, train=False, radars=[1], testoutdir='test_NLOS')
+    process_radar_data(root=os.path.join(base_folder, 'set_10'), eps=0.06, min_samples=5, train=False, radars=[0], testoutdir='test_nNLOS')

@@ -5,9 +5,6 @@ from scipy.signal import correlate
 from scipy.interpolate import RectBivariateSpline
 from sklearn.cluster import DBSCAN
 import csv
-import matplotlib.pyplot as plt
-from matplotlib import colors
-import matplotlib.animation as anim
 import time
 import json
 import os

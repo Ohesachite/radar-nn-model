@@ -923,7 +923,7 @@ class Radar(Dataset):
 
                         
 if __name__ == '__main__':
-    dataset = Radar(root='/home/alan/Documents/radar-nn-model/data/radar/test_old', mode=6, frames_per_clip=24, num_points=1024, decay=0.02)
+    dataset = Radar(root='/home/alan/Documents/radar-nn-model/data/radar/train_2seen', mode=0, frames_per_clip=24, num_points=1024, decay=0.02)
     # for vid, points, label, index, start, vid_len, _, _ in dataset:
     #     print(vid.shape, points.shape, label, index, start, vid_len)
     print(len(dataset))
@@ -932,15 +932,19 @@ if __name__ == '__main__':
     for n in range(len(dataset.labels)):
         label = dataset.labels[n]
         samples = dataset.num_samples[n]
+        if dataset.generate_positive[n][0] == -1:
+            nums_of_videos[label] += 1
+            nums_samples[label] += samples
         nums_of_videos[label] += 1
         nums_samples[label] += samples
     nums_of_clips = [0] * dataset.num_classes
-    for index, _, segnum in dataset.index_map:
-        nums_of_clips[dataset.labels[index]] += 1
-    # for index, _ in dataset.index_map:
+    # for index, _, segnum in dataset.index_map:
     #     nums_of_clips[dataset.labels[index]] += 1
+    for index, _ in dataset.index_map:
+        if dataset.generate_positive[index][0] == -1:
+            nums_of_clips[dataset.labels[index]] += 1
+        nums_of_clips[dataset.labels[index]] += 1
     
-    print(dataset.index_map)
     print(nums_of_videos)
     print(nums_of_clips)
     print(nums_samples)

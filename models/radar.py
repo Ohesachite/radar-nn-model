@@ -40,7 +40,7 @@ class RadarP4Transformer (nn.Module):
 
     def forward(self, xyzs, old_features):                                                                                              # [B, L, N, 3], [B, L, 1, n]
         device = xyzs.get_device()
-        new_xyzs, features = self.tube_embedding(xyzs, old_features)                                                                    # [B, L, n, 3], [B, L, C, n] 
+        new_xyzs, features = self.tube_embedding(xyzs, old_features)
 
         xyzts = self.xyzs_to_xyzts(new_xyzs, device)
 
