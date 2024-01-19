@@ -1,10 +1,9 @@
 #!/bin/bash
 
 #SBATCH --job-name=RadarNN
-#SBATCH --account=gts-ks207-paid
+#SBATCH --account=gts-ks207
 #SBATCH --nodes=1 
 #SBATCH --gres=gpu:V100:2
-#SBATCH --mem-per-gpu=12G
 #SBATCH --time=08:00:00
 #SBATCH -qembers
 #SBATCH --mail-type=BEGIN,END,FAIL

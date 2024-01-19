@@ -9,7 +9,7 @@ import time
 import json
 import os
 
-def load_point_cloud_vid(csvpaths, offsets, fps=16, eps=0.06, min_samples=5):
+def load_point_cloud_vid(csvpaths, offsets, fps=16, eps=0.06, min_samples=5, retskipped=False):
     if len(csvpaths) == 0:
         print("No point clouds to load")
         return
@@ -38,17 +38,20 @@ def load_point_cloud_vid(csvpaths, offsets, fps=16, eps=0.06, min_samples=5):
     max_time = np.amax(data_all[:,0])
     n_frames = int(max_time // frame_period + 1)
     frames_skipped = 0
+    skip_indices = []
     
     video = []
     for frame_n in range(n_frames):
         frame_mask = np.logical_and(frame_n * frame_period <= data_all[:,0], data_all[:,0] < (frame_n + 1) * frame_period)
         if not np.any(frame_mask):
             print("Zero point frame detected")
+            skip_indices.append(frame_n)
             frames_skipped += 1
             continue
         dbscan = DBSCAN(eps=eps, min_samples=min_samples).fit(data_all[frame_mask, 3:6])
         if all(dbscan.labels_ == -1):
             print("DBSCAN reduced frame to zero points, dropping frame")
+            skip_indices.append(frame_n)
             frames_skipped += 1
             continue
         frame_points = data_all[frame_mask,2:][dbscan.labels_ != -1, :]
@@ -57,6 +60,8 @@ def load_point_cloud_vid(csvpaths, offsets, fps=16, eps=0.06, min_samples=5):
         
         video.append(frame)
         
+    if retskipped:
+        return video, skip_indices
     return video
 
 def median_centering(point_cloud_vid):
@@ -205,16 +210,10 @@ def dynamic_bound_combination(boundaries, label):
     print(bound_sizes)
     
     new_boundaries = []
-    if label == 'sq':
-        bound_size_expectation = 22
-    elif label == 'aud':
+    if label == 'aud':
         bound_size_expectation = 60
     elif label == 'lud':
         bound_size_expectation = 24
-    elif label == 'pu':
-        bound_size_expectation = int(sum(bound_sizes) * 3 / len(boundaries) / 4)
-    elif label == 'su':
-        bound_size_expectation = 23
     else:
         bound_size_expectation = 0
                                      
