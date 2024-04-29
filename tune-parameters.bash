@@ -1,16 +1,18 @@
 #!/bin/bash
-lr=0.01
 
-for clip_len in 16
+constants="-t --train-data data/radar/train_3seen --test-data data/radar/test_seen2_n0"
+nepochs="--milestones 40 10 20 30"
+outprefix="tune_"
+
+cac=0
+
+for ca in 0.0 0.1 0.5 0.9 1.0
 do
-    for ca in 0.1 0.2 0.3
+    cac=$((cac+1))
+    cwc=0
+    for cw in 0.01 0.1 1.0
     do
-        for cw in 0.01 0.05 0.1
-        do
-            file_name="results/results-lr-$lr-clip-len-$clip_len-ca-$ca-cw-$cw.txt"
-            if [ ! -f ${file_name} ]; then
-                python train-radar.py --lr=$lr --clip-len=$clip_len --contrastive-alpha=$ca --contrastive-weight=$cw  --result-file=$file_name
-            fi
-        done
+        cwc=$((cwc+1))
+        sbatch run_radar_model.sbatch $constants $nepochs -ca $ca -cw $cw -st ckpts/${outprefix}ca${cac}_cw${cwc}
     done
 done

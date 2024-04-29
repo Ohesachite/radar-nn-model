@@ -382,8 +382,8 @@ def parse_args():
     import argparse
     parser = argparse.ArgumentParser(description='P4Transformer Model Training')
 
-    parser.add_argument('--train-path', default='/home/alan/Documents/radar-nn-model/data/radar/train_save', type=str, help='training dataset')
-    parser.add_argument('--test-path', default='/home/alan/Documents/radar-nn-model/data/radar/test_save', type=str, help='testing dataset')
+    parser.add_argument('--train-path', default='', type=str, help='training dataset')
+    parser.add_argument('--test-path', default='', type=str, help='testing dataset')
     parser.add_argument('--train-mode', default=0, type=int, help='training mode number')
     parser.add_argument('--test-mode', default=0, type=int, help='testing mode number')
     parser.add_argument('--seed', default=0, type=int, help='random seed')

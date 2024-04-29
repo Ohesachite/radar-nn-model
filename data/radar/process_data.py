@@ -501,10 +501,10 @@ if __name__ == "__main__":
     # process_radar_data(root=os.path.join(base_folder, 'setenv-5158s_0'), eps=0.06, min_samples=5, radars=[2], label_offset=41)    # 2
 
     # Unseen targets
-    process_radar_data(root=os.path.join(base_folder, 'setenv-131_far'), eps=0.08, min_samples=4, train=False, radars=[0], testoutdir='test_ut')    # 2
-    process_radar_data(root=os.path.join(base_folder, 'set-unseentar'), eps=0.06, min_samples=5, train=False, radars=[0], testoutdir='test_ut')                   # 28-30
-    process_radar_data(root=os.path.join(base_folder, 'set-unseentar'), eps=0.06, min_samples=5, train=False, radars=[1], testoutdir='test_ut', label_offset=12)                   # 28-30
-    process_radar_data(root=os.path.join(base_folder, 'set-unseentar'), eps=0.06, min_samples=5, train=False, radars=[2], testoutdir='test_ut', label_offset=24)                   # 28-30
+    # process_radar_data(root=os.path.join(base_folder, 'setenv-131_far'), eps=0.08, min_samples=4, train=False, radars=[0], testoutdir='test_ut')    # 2
+    # process_radar_data(root=os.path.join(base_folder, 'set-unseentar'), eps=0.06, min_samples=5, train=False, radars=[0], testoutdir='test_ut')                   # 28-30
+    # process_radar_data(root=os.path.join(base_folder, 'set-unseentar'), eps=0.06, min_samples=5, train=False, radars=[1], testoutdir='test_ut', label_offset=12)                   # 28-30
+    # process_radar_data(root=os.path.join(base_folder, 'set-unseentar'), eps=0.06, min_samples=5, train=False, radars=[2], testoutdir='test_ut', label_offset=24)                   # 28-30
 
     # Unseen (all separated)
     # process_radar_data(root=os.path.join(base_folder, 'setenv-935s_0'), eps=0.06, min_samples=5, train=False, radars=[1], testoutdir='test_s1_0')                       # 1

@@ -440,6 +440,7 @@ class Radar(Dataset):
             clip = []
             for i in range(self.frames_per_clip):
                 frame = video[video[:,0] == t+i*self.frame_interval, 2:]
+                print(self.get_frame_doppler_profile(frame, norm=True))
                 clip.append(frame)
 
             for i, p in enumerate(clip):
@@ -920,10 +921,28 @@ class Radar(Dataset):
                 i += 1
 
         return new_boundaries
+    
+    def get_frame_doppler_profile(self, frame, ndbins=30, range=[-1.5,1.5], norm = False):
+        res = float(range[1] - range[0]) / ndbins
 
+        doppler = frame[:,3]
+        intensity = frame[:,4]
+
+        profile = np.zeros(ndbins)
+
+        for d, i in zip(doppler, intensity):
+            bin = int(np.floor((d - range[0]) / res))
+            if bin >= ndbins or bin < 0:
+                continue
+            profile[bin] += i
+
+        if norm:
+            profile /= np.sum(profile)
+
+        return profile
                         
 if __name__ == '__main__':
-    dataset = Radar(root='/home/alan/Documents/radar-nn-model/data/radar/test_NLOS', mode=0, frames_per_clip=24, num_points=1024, decay=0.02)
+    dataset = Radar(root='data/radar/test_old', mode=0, frames_per_clip=30, num_points=1024, decay=0.02)
     # for vid, points, label, index, start, vid_len, _, _ in dataset:
     #     print(vid.shape, points.shape, label, index, start, vid_len)
     print(len(dataset))
@@ -945,9 +964,11 @@ if __name__ == '__main__':
         #     nums_of_clips[dataset.labels[index]] += 1
         nums_of_clips[dataset.labels[index]] += 1
     
-    print(nums_of_videos)
-    print(nums_of_clips)
-    print(nums_samples)
+    # print(nums_of_videos)
+    # print(nums_of_clips)
+    # print(nums_samples)
 
-    print(dataset.labels)
+    # print(dataset.labels)
     
+    sample_frame, _, label, _, _, _, _, _ = dataset[30]
+    print(label)
