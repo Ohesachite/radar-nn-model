@@ -53,3 +53,26 @@ To gather results of the segmentation algorithm:
 python get-count-accs.py
 ```
 Use ``--sets`` flag to specify a list of folders containing raw data
+
+## Cite
+
+If you used this code in any of your projects, you can cite our paper with the following BibTex:
+
+``@article{10.1145/3678512,
+author = {Liu, Alan and Lin, Yu-Tai and Sundaresan, Karthikeyan},
+title = {View-agnostic Human Exercise Cataloging with Single MmWave Radar},
+year = {2024},
+issue_date = {August 2024},
+publisher = {Association for Computing Machinery},
+address = {New York, NY, USA},
+volume = {8},
+number = {3},
+url = {https://doi.org/10.1145/3678512},
+doi = {10.1145/3678512},
+abstract = {Advances in mmWave-based sensing have enabled a privacy-friendly approach to pose and gesture recognition. Yet, providing robustness with the sparsity of reflected signals has been a long-standing challenge towards its practical deployment, constraining subjects to often face the radar. We present RF-HAC- a first-of-its-kind system that brings robust, automated and real-time human activity cataloging to practice by not only classifying exercises performed by subjects in their natural environments and poses, but also tracking the corresponding number of exercise repetitions. RF-HAC's unique approach (i) brings the diversity of multiple radars to scalably train a novel, self-supervised, pose-agnostic transformer-based exercise classifier directly on 3D RF point clouds with minimal manual effort and be deployed on a single radar; and (ii) leverages the underlying doppler behavior of exercises to design a robust self-similarity based segmentation algorithm for counting the repetitions in unstructured RF point clouds. Evaluations on a comprehensive set of challenging exercises in both seen and unseen environments/subjects highlight RF-HAC's robustness with high accuracy (over 90\%) and readiness for real-time, practical deployments over prior art.},
+journal = {Proc. ACM Interact. Mob. Wearable Ubiquitous Technol.},
+month = sep,
+articleno = {117},
+numpages = {23},
+keywords = {human activity recognition, mmWave Sensing, self-supervised learning, view-agnostic sensing}
+}``
