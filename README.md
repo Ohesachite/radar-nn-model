@@ -1,4 +1,6 @@
-This model can predict exercises given point cloud sequences.
+## RF-HAC
+
+View-agnostic Human Exercise Cataloging with Single MmWave Radar
 
 ## Installation
 
