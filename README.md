@@ -22,6 +22,8 @@ Compilation requires installation of PointNet++ PyTorch version, which can be fo
 
 ## Data
 
+Raw data collected by us can be found [here](https://zenodo.org/records/10602471). The datasets consists of Environment 2 under folder  ``setenv-457_test`` and Unseen Environments ``env935, env935_60, env85, env_131_0, env_131_nonfront``.
+
 Place raw data in folder ``data/radar`` before running preprocessing. There should only be one level of subdirectories between ``data/radar`` and the csv files, e.g. a given raw data file should have a path like this: ``data/radar/set8_0/label_aud_01a.csv``
 
 Checkpoints can be found in ``ckpts`` folder.
