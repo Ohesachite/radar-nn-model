@@ -58,7 +58,8 @@ Use ``--sets`` flag to specify a list of folders containing raw data
 
 If you used this code in any of your projects, you can cite our paper with the following BibTex:
 
-``@article{10.1145/3678512,
+```
+@article{10.1145/3678512,
 author = {Liu, Alan and Lin, Yu-Tai and Sundaresan, Karthikeyan},
 title = {View-agnostic Human Exercise Cataloging with Single MmWave Radar},
 year = {2024},
@@ -75,4 +76,5 @@ month = sep,
 articleno = {117},
 numpages = {23},
 keywords = {human activity recognition, mmWave Sensing, self-supervised learning, view-agnostic sensing}
-}``
+}
+```
