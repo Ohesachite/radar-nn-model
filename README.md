@@ -19,7 +19,7 @@ Place raw data in folder ``data/radar`` before running preprocessing. There shou
 Checkpoints can be found in ``ckpts`` folder.
 
 The columns of each of the csv files should have the following data: 
-''frame_time, frame_id, point_id, x, y, z, doppler, intensity''
+``frame_time, frame_id, point_id, x, y, z, doppler, intensity``
 
 ## Preprocessing
 
