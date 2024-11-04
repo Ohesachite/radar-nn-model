@@ -18,11 +18,12 @@ Place raw data in folder ``data/radar`` before running preprocessing. There shou
 
 Checkpoints can be found in ``ckpts`` folder.
 
+The columns of each of the csv files should have the following data: 
+''frame_time, frame_id, point_id, x, y, z, doppler, intensity''
+
 ## Preprocessing
 
 Preprocessing script can be found in the following path: ``data/radar/process_data_review.py``
-
-For reviewers: After running the preprocessing script, place file ``vid_metadata.json`` inside of the training folder. This will help the model differentiate aggregated point clouds from point clouds originating from a single radar.
 
 ## Classification
 
