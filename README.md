@@ -31,7 +31,7 @@ The columns of each of the csv files should have the following data:
 
 ## Preprocessing
 
-Preprocessing script can be found in the following path: ``data/radar/process_data_review.py``
+Preprocessing script can be found in the following path: ``data/radar/process_data.py``
 
 ## Classification
 
