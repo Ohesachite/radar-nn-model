@@ -2,6 +2,12 @@
 
 View-agnostic Human Exercise Cataloging with Single MmWave Radar
 
+This repo contains the implementation of the paper: [View-agnostic Human Exercise Cataloging with Single MmWave Radar](https://dl.acm.org/doi/10.1145/3678512) published in Proceedings of the ACM on Interactive, Mobile, Wearable and Ubiquitous Technologies, Volume 8, Issue 3.
+
+# Authors
+
+Alan Liu, YuTai Lin, Karthik Sundaresan
+
 ## Installation
 
 The code is tested with g++ (GCC) 9.4.0, PyTorch v1.12.1, CUDA 11.3.
